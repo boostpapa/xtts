@@ -9,8 +9,10 @@ import torch.utils.data
 import torchaudio
 import torchvision
 from tqdm import tqdm
+from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 
 from ttts.classifier.infer import read_jsonl
+
 
 class PreprocessedMelDataset(torch.utils.data.Dataset):
 
@@ -23,17 +25,39 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         #     path = Path(path)
         #     self.paths = [str(p) for p in path.rglob("*.mel.pth")]
         #     torch.save(self.paths, cache_path)
+        '''
         paths = read_jsonl(opt['dataset']['path'])
         pre = os.path.expanduser(opt['dataset']['pre'])
         self.paths = [os.path.join(pre,d['path'])+'.mel.pth' for d in paths]
+        '''
+        self.wav_paths = []
+        list_file = opt['dataset']['path']
+        with open(list_file, 'r', encoding='utf8') as fin:
+            for line in fin:
+                self.wav_paths.append(line.strip())
         self.pad_to = opt['dataset']['pad_to_samples']
-        self.squeeze = opt['dataset']['should_squeeze']
+        self.squeeze = opt['dataset']['squeeze']
+        self.sample_rate = opt['dataset']['sample_rate']
+        self.mel_extractor = MelSpectrogramFeatures()
 
     def __getitem__(self, index):
+
         try:
-            mel = torch.load(self.paths[index])
+            wav_file = self.wav_paths[index]
+            wave, sample_rate = torchaudio.load(wav_file)
+            if wave.size(0) > 1:  # mix to mono
+                wave = wave[0].unsqueeze(0)
+            if sample_rate != self.sample_rate:
+                transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
+                wave = transform(wave)
+        except :
+            return None
+
+        try:
+            mel = self.mel_extractor(wave)
         except:
-            mel = torch.zeros(1,100,self.pad_to)
+            mel = torch.zeros(1, 100, self.pad_to)
+
         if mel.shape[-1] >= self.pad_to:
             start = torch.randint(0, mel.shape[-1] - self.pad_to+1, (1,))
             mel = mel[:, :, start:start+self.pad_to]
@@ -41,8 +65,8 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         else:
             mask = torch.zeros_like(mel)
             padding_needed = self.pad_to - mel.shape[-1]
-            mel = F.pad(mel, (0,padding_needed))
-            mask = F.pad(mask, (0,padding_needed), value=1)
+            mel = F.pad(mel, (0, padding_needed))
+            mask = F.pad(mask, (0, padding_needed), value=1)
         assert mel.shape[-1] == self.pad_to
         if self.squeeze:
             mel = mel.squeeze()
