@@ -14,18 +14,16 @@ from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 
 class PreprocessedMelDataset(torch.utils.data.Dataset):
 
-    def __init__(self, opt):
+    def __init__(self, audio_paths, opt):
 
         self.wav_paths = []
-        list_file = opt['dataset']['training_files']
-        with open(list_file, 'r', encoding='utf8') as fin:
+        with open(audio_paths, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.wav_paths.append(line.strip())
         self.pad_to = opt['dataset']['pad_to_samples']
         self.squeeze = opt['dataset']['squeeze']
         self.sample_rate = opt['dataset']['sample_rate']
         self.mel_extractor = MelSpectrogramFeatures(**opt['dataset']['mel'])
-
 
     def __getitem__(self, index):
 

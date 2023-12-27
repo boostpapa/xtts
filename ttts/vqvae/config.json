@@ -1,14 +1,15 @@
 {
   "train": {
     "train_steps":50000,
-    "val_freq" : 100,
-    "save_freq" : 1000,
-    "keep_ckpts" : 3,
-    "lr":1e-4,
-    "logs_folder":"ttts/vqvae/logs"
+    "epochs": 30,
+    "log_interval" : 200,
+    "eval_interval" : 10000,
+    "keep_ckpts" : 10,
+    "lr":1e-4
   },
   "dataset": {
     "training_files": "filelists/train.list",
+    "validation_files": "filelists/val.list",
     "pad_to_samples": 200,
     "sample_rate": 24000,
     "squeeze":false
@@ -26,7 +27,7 @@
   },
   "dataloader":
   {
-    "batch_size" : 1024,
+    "batch_size" : 64,
     "shuffle": false,
     "num_workers" : 0,
     "drop_last":true, 
