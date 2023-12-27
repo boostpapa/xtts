@@ -26,7 +26,8 @@ class FeatureExtractor(nn.Module):
 
 
 class MelSpectrogramFeatures(FeatureExtractor):
-    def __init__(self, sample_rate=24000, n_fft=1024, hop_length=256, n_mels=100, padding="center"):
+    def __init__(self, sample_rate=24000, n_fft=1024, hop_length=256, win_length=1024,
+                    n_mels=80, mel_fmin=0, mel_fmax=8000, normalize=False, padding="center"):
         super().__init__()
         if padding not in ["center", "same"]:
             raise ValueError("Padding must be 'center' or 'same'.")
@@ -35,9 +36,13 @@ class MelSpectrogramFeatures(FeatureExtractor):
             sample_rate=sample_rate,
             n_fft=n_fft,
             hop_length=hop_length,
+            win_length=win_length,
+            power=2,
+            normalized=normalize,
+            f_min=mel_fmin,
+            f_max=mel_fmax,
             n_mels=n_mels,
             center=padding == "center",
-            power=1,
         )
 
     def forward(self, audio, **kwargs):
@@ -45,8 +50,8 @@ class MelSpectrogramFeatures(FeatureExtractor):
             pad = self.mel_spec.win_length - self.mel_spec.hop_length
             audio = torch.nn.functional.pad(audio, (pad // 2, pad // 2), mode="reflect")
         mel = self.mel_spec(audio)
-        features = safe_log(mel)
-        return features
+        mel = safe_log(mel, min=1e-5)
+        return mel
 
 
 class EncodecFeatures(FeatureExtractor):

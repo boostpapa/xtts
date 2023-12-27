@@ -11,47 +11,33 @@ import torchvision
 from tqdm import tqdm
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 
-from ttts.classifier.infer import read_jsonl
-
 
 class PreprocessedMelDataset(torch.utils.data.Dataset):
 
     def __init__(self, opt):
-        # cache_path = opt['dataset']['cache_path']  # Will fail when multiple paths specified, must be specified in this case.
-        # if os.path.exists(cache_path):
-        #     self.paths = torch.load(cache_path)
-        # else:
-        #     print("Building cache..")
-        #     path = Path(path)
-        #     self.paths = [str(p) for p in path.rglob("*.mel.pth")]
-        #     torch.save(self.paths, cache_path)
-        '''
-        paths = read_jsonl(opt['dataset']['path'])
-        pre = os.path.expanduser(opt['dataset']['pre'])
-        self.paths = [os.path.join(pre,d['path'])+'.mel.pth' for d in paths]
-        '''
+
         self.wav_paths = []
-        list_file = opt['dataset']['path']
+        list_file = opt['dataset']['training_files']
         with open(list_file, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.wav_paths.append(line.strip())
         self.pad_to = opt['dataset']['pad_to_samples']
         self.squeeze = opt['dataset']['squeeze']
         self.sample_rate = opt['dataset']['sample_rate']
-        self.mel_extractor = MelSpectrogramFeatures()
+        self.mel_extractor = MelSpectrogramFeatures(**opt['dataset']['mel'])
+
 
     def __getitem__(self, index):
 
-        try:
-            wav_file = self.wav_paths[index]
-            wave, sample_rate = torchaudio.load(wav_file)
-            if wave.size(0) > 1:  # mix to mono
-                wave = wave[0].unsqueeze(0)
-            if sample_rate != self.sample_rate:
-                transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
-                wave = transform(wave)
-        except :
-            return None
+        wav_file = self.wav_paths[index]
+        wave, sample_rate = torchaudio.load(wav_file)
+        #print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
+        if wave.size(0) > 1:  # mix to mono
+            wave = wave[0].unsqueeze(0)
+        if sample_rate != self.sample_rate:
+            transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
+            wave = transform(wave)
+        #print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
 
         try:
             mel = self.mel_extractor(wave)
@@ -74,7 +60,7 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         return mel
 
     def __len__(self):
-        return len(self.paths)
+        return len(self.wav_paths)
 
 
 if __name__ == '__main__':
@@ -87,11 +73,11 @@ if __name__ == '__main__':
         'n_workers': 0,
         'batch_size': 16,
     }
-    cfg = json.load(open('vqvae/config.json'))
+    cfg = json.load(open('configs/config.json'))
     ds = PreprocessedMelDataset(cfg)
     dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'])
     i = 0
-    for b in tqdm(dl):
+    for b in dl:
         #pass
         torchvision.utils.save_image((b['mel']+1)/2, f'{i}.png')
         i += 1

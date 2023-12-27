@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from torch import nn
 from torch.optim import AdamW
 from accelerate import Accelerator
+import argparse
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 
@@ -34,9 +35,9 @@ def cycle(dl):
         for data in dl:
             yield data
 class Trainer(object):
-    def __init__(self, cfg_path='ttts/vqvae/config.json'):
+    def __init__(self, args):
         self.accelerator = Accelerator()
-        self.cfg = json.load(open(cfg_path))
+        self.cfg = json.load(open(args.config))
         self.vqvae = DiscreteVAE(**self.cfg['vqvae'])
         self.dataset = PreprocessedMelDataset(self.cfg)
         self.dataloader = DataLoader(self.dataset, **self.cfg['dataloader'])
@@ -45,7 +46,7 @@ class Trainer(object):
         if self.accelerator.is_main_process:
             # self.ema_model = self._get_target_encoder(self.vqvae).to(self.accelerator.device)
             now = datetime.now()
-            self.logs_folder = Path(self.cfg['train']['logs_folder']+'/'+now.strftime("%Y-%m-%d-%H-%M-%S"))
+            self.logs_folder = Path(args.model+'/'+now.strftime("%Y-%m-%d-%H-%M-%S"))
             self.logs_folder.mkdir(exist_ok = True, parents=True)
         self.ema_updater = EMA(0.999)
         self.optimizer = AdamW(self.vqvae.parameters(),lr=3e-4, betas=(0.9, 0.9999), weight_decay=0.01)
@@ -136,7 +137,37 @@ class Trainer(object):
         accelerator.print('training complete')
 
 
+def get_args():
+    parser = argparse.ArgumentParser(description='train vqvae')
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default='./configs/config.json',
+        help='config file',
+        required=True,
+    )   
+
+    parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        help="experiment base directory",
+        default='exp',
+        required=True,
+    )   
+    #args = parser.parse_args()
+    args, _ = parser.parse_known_args()
+
+    return args
+
+
 if __name__ == '__main__':
-    trainer = Trainer()
+    args = get_args()
+    print(args)
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+    trainer = Trainer(args)
     # trainer.load('~/tortoise_plus_zh/ttts/vqvae/logs/2023-11-04-00-25-39/model-14.pt')
+     
     trainer.train()
