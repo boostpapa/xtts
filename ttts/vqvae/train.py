@@ -5,19 +5,22 @@ from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, summarize, update_moving_average
+from ttts.utils.utils import get_logger
+from ttts.utils.checkpoint import load_trained_modules
 from ttts.vqvae.dataset import PreprocessedMelDataset
 import torch
 import os
 from torch.utils.data import DataLoader
 from torch import nn
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import ExponentialLR
 from accelerate import Accelerator
 import argparse
 import logging
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 
-
+logging.getLogger("numba").setLevel(logging.WARNING)
 def set_requires_grad(model, val):
     for p in model.parameters():
         p.requires_grad = val
@@ -43,9 +46,7 @@ def cycle(dl):
 
 class Trainer(object):
     def __init__(self, args):
-        self.accelerator = Accelerator()
         self.cfg = json.load(open(args.config))
-        self.vqvae = DiscreteVAE(**self.cfg['vqvae'])
         self.train_dataset = PreprocessedMelDataset(self.cfg['dataset']['training_files'], self.cfg)
         self.eval_dataset = PreprocessedMelDataset(self.cfg['dataset']['validation_files'], self.cfg)
         self.train_data_loader = DataLoader(self.train_dataset, **self.cfg['dataloader'])
@@ -53,20 +54,37 @@ class Trainer(object):
         self.train_steps = self.cfg['train']['train_steps']
         self.eval_interval = self.cfg['train']['eval_interval']
         self.log_interval = self.cfg['train']['log_interval']
-        self.num_epochs = self.cfg['train']('epochs')
+        self.num_epochs = self.cfg['train']['epochs']
         self.c_comm = 0.25
+        self.use_fp16 = self.cfg['train']['fp16_run']
+        precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16'] 
+        self.vqvae = DiscreteVAE(**self.cfg['vqvae'])
+        if 'pretrain_model' in self.cfg['train']:
+            model_pth = self.cfg['train']['pretrain_model']
+            logging.warning("loading pretrain model: {}".format(model_pth))
+            dvae_checkpoint = torch.load(model_pth, map_location=torch.device("cpu"))
+            self.vqvae.load_state_dict(dvae_checkpoint, strict=False)
+            print(">> DVAE weights restored from:", model_pth)
+            #load_trained_modules(self.vqvae, model_pth)
+            
+        self.accelerator = Accelerator(Accelerator(mixed_precision=precision))
+        self.model_dir = Path(args.model)
         if self.accelerator.is_main_process:
             # self.ema_model = self._get_target_encoder(self.vqvae).to(self.accelerator.device)
             #now = datetime.now()
             #self.logs_folder = Path(args.model+'/'+now.strftime("%Y-%m-%d-%H-%M-%S"))
-            self.model_dir = Path(args.model)
             self.model_dir.mkdir(exist_ok = True, parents=True)
+        self.logger = get_logger(self.model_dir)
         #self.ema_updater = EMA(0.999)
-        self.optimizer = AdamW(self.vqvae.parameters(), lr=3e-4, betas=(0.9, 0.9999), weight_decay=0.01)
+        self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
         self.vqvae, self.train_data_loader, self.optimizer = self.accelerator.prepare(self.vqvae, self.train_data_loader, self.optimizer)
         #self.dataloader = cycle(self.dataloader)
+        self.accum_grad = self.cfg['train']['accum_grad']
+        self.grad_clip = self.cfg['train']['grad_clip']
+        if self.grad_clip <= 0:
+            self.grad_clip = 50
         self.global_step = 0
-        self.gradient_accumulate_every = 1
 
     def _get_target_encoder(self, model):
         target_encoder = copy.deepcopy(model)
@@ -84,7 +102,7 @@ class Trainer(object):
         }
         torch.save(data, filepath)
 
-    def load(self, model_path):
+    def load_model(self, model_path):
         accelerator = self.accelerator
         device = accelerator.device
         data = torch.load(model_path, map_location=device)
@@ -100,19 +118,22 @@ class Trainer(object):
         commitment_losses = 0
         total_losses = 0
         num_samples = 0
+        bz = 0
+        device = self.accelerator.device
         with torch.no_grad():
             eval_model = self.accelerator.unwrap_model(self.vqvae)
             eval_model.eval()
             for batch_idx, mel in enumerate(self.eval_data_loader):
-                batch_size = mel.size(0)
+                mel = mel.to(device).squeeze(1)
                 recon_loss, commitment_loss, mel_recon = eval_model(mel)
-                recon_losses += recon_loss.item()
-                commitment_losses += commitment_loss.item()
-                num_samples += batch_size
+                recon_loss = torch.mean(recon_loss)
+                recon_losses += recon_loss
+                commitment_losses += commitment_loss
+                bz += 1
             eval_model.train()
 
-        recon_losses /= num_samples
-        commitment_losses /= len(self.eval_data_loader)
+        recon_losses /= bz
+        commitment_losses /= bz
         total_losses = recon_losses + self.c_comm * commitment_losses
         return [total_losses, recon_losses, commitment_losses]
 
@@ -122,57 +143,63 @@ class Trainer(object):
         if accelerator.is_main_process:
             writer = SummaryWriter(log_dir=self.model_dir)
 
+        self.logger.info("Initial Evaluating ...")
+        losses = self.eval()
+        self.logger.info([x.item() for x in losses])
+
         for epoch in range(0, self.num_epochs):
             for batch_idx, mel in enumerate(self.train_data_loader):
                 recon_losses = 0
                 commitment_losses = 0
                 total_losses = 0.
-                for _ in range(self.gradient_accumulate_every):
+                for _ in range(self.accum_grad):
                     mel = mel.to(device).squeeze(1)
                     with self.accelerator.autocast():
                         recon_loss, commitment_loss, mel_recon = self.vqvae(mel)
                         recon_loss = torch.mean(recon_loss)
-                        loss = recon_loss + 0.25 * commitment_loss
-                        loss = loss / self.gradient_accumulate_every
+                        loss = recon_loss + self.c_comm * commitment_loss
+                        loss = loss / self.accum_grad
                     self.accelerator.backward(loss)
-                    total_losses += loss.item()
-                    recon_losses += recon_loss.item()
-                    commitment_losses += commitment_loss.item()
+                    total_losses += loss
+                    recon_losses += recon_loss / self.accum_grad
+                    commitment_losses += commitment_loss / self.accum_grad
 
                 grad_norm = get_grad_norm(self.vqvae)
-                accelerator.clip_grad_norm_(self.vqvae.parameters(), 5.0)
+                if accelerator.sync_gradients:
+                    accelerator.clip_grad_norm_(self.vqvae.parameters(), self.grad_clip)
                 accelerator.wait_for_everyone()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
                 accelerator.wait_for_everyone()
 
-            if accelerator.is_main_process and self.global_step % self.log_interval == 0:
-                lr = self.optimizer.param_groups[0]["lr"]
-                losses = [total_losses, recon_losses, commitment_losses]
-                logging.info("Train Epoch: {} [{:.0f}%]".format(
-                        epoch, 100.0 * batch_idx / len(self.train_data_loader)
-                    ))
-                logging.info([x.item() for x in losses] + [self.global_step, lr])
+                if accelerator.is_main_process and self.global_step % self.log_interval == 0:
+                    lr = self.optimizer.param_groups[0]["lr"]
+                    losses = [total_losses, recon_losses, commitment_losses]
+                    self.logger.info("Train Epoch: {} [{:.0f}%]".format(
+                            epoch, 100.0 * batch_idx / len(self.train_data_loader)
+                        ))
+                    self.logger.info([x.item() for x in losses] + [self.global_step, lr])
 
-            if accelerator.is_main_process and self.global_step % self.eval_interval == 0:
-                logging.info("Evaluating ...")
-                losses = eval()
-                logging.info(losses)
-
-                keep_ckpts = self.cfg['train']['keep_ckpts']
-                if keep_ckpts > 0:
-                    clean_checkpoints(path_to_models=self.model_dir,
-                                      n_ckpts_to_keep=keep_ckpts, sort_by_time=True)
-                self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
-
-                scalar_dict = {"loss": total_losses, "loss_mel": recon_losses, "loss_commitment": commitment_losses,
-                               "loss/grad": grad_norm}
-                summarize(
-                    writer=writer,
-                    global_step=self.global_step,
-                    scalars=scalar_dict
-                )
-            self.global_step += 1
+                if accelerator.is_main_process and self.global_step % self.eval_interval == 0:
+                    self.logger.info("Evaluating ...")
+                    losses = self.eval()
+                    self.logger.info([x.item() for x in losses])
+                 
+                    keep_ckpts = self.cfg['train']['keep_ckpts']
+                    if keep_ckpts > 0:
+                        clean_checkpoints(path_to_models=self.model_dir,
+                                          n_ckpts_to_keep=keep_ckpts, sort_by_time=True)
+                    self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
+                 
+                    scalar_dict = {"loss": total_losses, "loss_mel": recon_losses, "loss_commitment": commitment_losses,
+                                   "loss/grad": grad_norm}
+                    summarize(
+                        writer=writer,
+                        global_step=self.global_step,
+                        scalars=scalar_dict
+                    )
+                self.global_step += 1
+            self.scheduler.step()
         accelerator.print('training complete')
 
 

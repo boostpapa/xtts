@@ -37,10 +37,8 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
             wave = transform(wave)
         #print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
 
-        try:
-            mel = self.mel_extractor(wave)
-        except:
-            mel = torch.zeros(1, 100, self.pad_to)
+        mel = self.mel_extractor(wave)
+        #print(f"mel shape: {mel.shape}")
 
         if mel.shape[-1] >= self.pad_to:
             start = torch.randint(0, mel.shape[-1] - self.pad_to+1, (1,))
