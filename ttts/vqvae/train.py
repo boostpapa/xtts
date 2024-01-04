@@ -99,24 +99,26 @@ class Trainer(object):
         model.eval()
         recon_losses = 0
         commitment_losses = 0
-        total_losses = 0
+        ssim_losses = 0
         num_samples = 0
         with torch.no_grad():
             for batch_idx, mel in enumerate(self.eval_data_loader):
                 mel = mel.to(self.device).squeeze(1)
-                recon_loss, commitment_loss, mel_recon = model(mel)
+                recon_loss, ssim_loss, commitment_loss, mel_recon = model(mel)
                 #recon_loss = torch.mean(recon_loss, dim=(1, 2))
                 #recon_loss = torch.sum(recon_loss)
                 num_sample = mel.shape[0]
                 recon_losses += recon_loss * num_sample
+                ssim_losses += ssim_losses * num_sample
                 commitment_losses += commitment_loss * num_sample
                 num_samples += num_sample
 
         model.train()
         recon_losses /= num_samples
+        ssim_losses /= num_samples
         commitment_losses /= num_samples
-        total_losses = recon_losses + self.c_comm * commitment_losses
-        return [total_losses, recon_losses, commitment_losses]
+        total_losses = recon_losses + ssim_losses + self.c_comm * commitment_losses
+        return [total_losses, recon_losses, ssim_losses, commitment_losses]
 
     def train(self):
         writer = SummaryWriter(log_dir=self.model_dir)
@@ -128,19 +130,21 @@ class Trainer(object):
         for epoch in range(0, self.num_epochs):
             for batch_idx, mel in enumerate(self.train_data_loader):
                 recon_losses = 0
+                ssim_losses = 0
                 commitment_losses = 0
                 total_losses = 0.
                 for _ in range(self.accum_grad):
                     mel = mel.to(self.device).squeeze(1)
                     with torch.cuda.amp.autocast(self.use_fp16):
-                        recon_loss, commitment_loss, mel_recon = self.vqvae(mel)
+                        recon_loss, ssim_loss, commitment_loss, mel_recon = self.vqvae(mel)
                         #recon_loss = torch.mean(recon_loss, dim=(1, 2))
                         #recon_loss = torch.mean(recon_loss)
-                        loss = recon_loss + self.c_comm * commitment_loss
+                        loss = recon_loss + ssim_loss + self.c_comm * commitment_loss
                         loss = loss / self.accum_grad
                     loss.backward()
                     total_losses += loss
                     recon_losses += recon_loss / self.accum_grad
+                    ssim_losses += ssim_loss / self.accum_grad
                     commitment_losses += commitment_loss / self.accum_grad
 
                 grad_norm = clip_grad_norm_(self.vqvae.parameters(), self.grad_clip)
@@ -150,7 +154,7 @@ class Trainer(object):
 
                 if self.global_step % self.log_interval == 0:
                     lr = self.optimizer.param_groups[0]["lr"]
-                    losses = [total_losses, recon_losses, commitment_losses]
+                    losses = [total_losses, ssim_losses, recon_losses, commitment_losses]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
                             epoch, 100.0 * batch_idx / len(self.train_data_loader)
                         ))

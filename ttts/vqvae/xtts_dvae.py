@@ -381,11 +381,11 @@ class DiscreteVAE(nn.Module):
         # reconstruction loss
         out = out[..., :img.shape[-1]]
         recon_loss = self.loss_fn(img, out, reduction="mean")
+        ssim_loss = 0
         if self.ssim_loss_weight > 0:
             ssim_loss = (1 - self.loss_ssim(img, out)) * self.ssim_loss_weight
-            recon_loss += ssim_loss
 
-        return recon_loss, commitment_loss, out
+        return recon_loss, ssim_loss, commitment_loss, out
 
     def log_codes(self, codes):
         # This is so we can debug the distribution of codes being learned.
