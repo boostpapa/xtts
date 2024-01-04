@@ -375,6 +375,7 @@ class DiscreteVAE(nn.Module):
             out, _ = self.decode(codes)
 
         # reconstruction loss
+        out = out[..., :img.shape[-1]]
         recon_loss = self.loss_fn(img, out, reduction="none")
 
         return recon_loss, commitment_loss, out

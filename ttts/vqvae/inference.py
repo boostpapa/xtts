@@ -3,8 +3,8 @@ import torch
 import torchaudio
 import argparse
 import json
-import scipy.misc
 import re
+import cv2
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
@@ -25,7 +25,7 @@ def get_args():
     return args
 
 
-def infer(mel_extractor, dvae, wav_path, sr):
+def infer(mel_extractor, dvae, wav_path, sr, device):
     wave, sample_rate = torchaudio.load(wav_path)
     # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
     if wave.size(0) > 1:  # mix to mono
@@ -36,7 +36,11 @@ def infer(mel_extractor, dvae, wav_path, sr):
 
     mel = mel_extractor(wave)
     mel_img = plot_spectrogram_to_numpy(mel[0, :, :].detach().unsqueeze(-1).cpu())
-    mel_recon = dvae.infer(mel)[0]
+    mel = mel.to(device).squeeze(1)
+    #mel_recon = dvae.infer(mel)[0]
+    recon_loss, commitment_loss, mel_recon = dvae(mel)
+    recon_loss = torch.mean(recon_loss)
+    print([recon_loss.item(), commitment_loss.item()])
     mel_recon_img = plot_spectrogram_to_numpy(mel_recon[0, :, :].detach().unsqueeze(-1).cpu())
     return mel_img, mel_recon_img
 
@@ -54,6 +58,7 @@ def main():
     dvae = DiscreteVAE(**cfg['vqvae'])
     dvae = dvae.to(device)
 
+    dvae.eval()
     dvae_checkpoint = torch.load(args.checkpoint, map_location=torch.device("cpu"))
     dvae.load_state_dict(dvae_checkpoint, strict=False)
 
@@ -66,10 +71,10 @@ def main():
         for line in fin:
             wav_path = line.strip()
             print(wav_path)
-            mel_img, mel_recon_img = infer(mel_extractor, dvae, wav_path, sr=sample_rate)
+            mel_img, mel_recon_img = infer(mel_extractor, dvae, wav_path, sr=sample_rate, device=device)
             img_name = re.split(r'/|\.', wav_path)[-2]
-            scipy.misc.imsave(f"{args.outdir}/{img_name}.jpg", mel_img)
-            scipy.misc.imsave(f"{args.outdir}/{img_name}_recon.jpg", mel_recon_img)
+            cv2.imwrite(f"{args.outdir}/{img_name}.png", mel_img)
+            cv2.imwrite(f"{args.outdir}/{img_name}_recon.png", mel_recon_img)
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ExponentialLR
-from accelerate import Accelerator
+from torch.nn.utils import clip_grad_norm_
 import argparse
 import logging
 
@@ -66,19 +66,16 @@ class Trainer(object):
             self.vqvae.load_state_dict(dvae_checkpoint, strict=False)
             print(">> DVAE weights restored from:", model_pth)
             #load_trained_modules(self.vqvae, model_pth)
+
+        self.device = torch.device('cuda')
+        self.vqvae = self.vqvae.cuda()
             
-        self.accelerator = Accelerator(Accelerator(mixed_precision=precision))
         self.model_dir = Path(args.model)
-        if self.accelerator.is_main_process:
-            # self.ema_model = self._get_target_encoder(self.vqvae).to(self.accelerator.device)
-            #now = datetime.now()
-            #self.logs_folder = Path(args.model+'/'+now.strftime("%Y-%m-%d-%H-%M-%S"))
-            self.model_dir.mkdir(exist_ok = True, parents=True)
+        self.model_dir.mkdir(exist_ok = True, parents=True)
         self.logger = get_logger(self.model_dir)
         #self.ema_updater = EMA(0.999)
         self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
-        self.vqvae, self.train_data_loader, self.optimizer = self.accelerator.prepare(self.vqvae, self.train_data_loader, self.optimizer)
         #self.dataloader = cycle(self.dataloader)
         self.accum_grad = self.cfg['train']['accum_grad']
         self.grad_clip = self.cfg['train']['grad_clip']
@@ -93,55 +90,35 @@ class Trainer(object):
             p.DO_NOT_TRAIN = True
         return target_encoder
 
-    def save_checkpoint(self, filepath):
-        if not self.accelerator.is_local_main_process:
-            return
-        data = {
-            'step': self.global_step,
-            'model': self.accelerator.get_state_dict(self.vqvae),
-        }
-        torch.save(data, filepath)
-
-    def load_model(self, model_path):
-        accelerator = self.accelerator
-        device = accelerator.device
-        data = torch.load(model_path, map_location=device)
-        state_dict = data['model']
-        self.global_step = data['step']
-        vqvae = accelerator.unwrap_model(self.vqvae)
-        vqvae.load_state_dict(state_dict)
-        # if self.accelerator.is_local_main_process:
-        #     self.ema_model.load_state_dict(state_dict)
+    def save_checkpoint(self, model, path):
+        state_dict = model.state_dict()
+        torch.save(state_dict, path)
 
     def eval(self):
+        model = self.vqvae
+        model.eval()
         recon_losses = 0
         commitment_losses = 0
         total_losses = 0
         num_samples = 0
-        bz = 0
-        device = self.accelerator.device
         with torch.no_grad():
-            eval_model = self.accelerator.unwrap_model(self.vqvae)
-            eval_model.eval()
             for batch_idx, mel in enumerate(self.eval_data_loader):
-                mel = mel.to(device).squeeze(1)
-                recon_loss, commitment_loss, mel_recon = eval_model(mel)
-                recon_loss = torch.mean(recon_loss)
+                mel = mel.to(self.device).squeeze(1)
+                recon_loss, commitment_loss, mel_recon = model(mel)
+                recon_loss = torch.mean(recon_loss, dim=(1, 2))
+                recon_loss = torch.sum(recon_loss)
                 recon_losses += recon_loss
                 commitment_losses += commitment_loss
-                bz += 1
-            eval_model.train()
+                num_samples += mel.shape[0]
 
-        recon_losses /= bz
-        commitment_losses /= bz
+        model.train()
+        recon_losses /= num_samples
+        commitment_losses /= num_samples
         total_losses = recon_losses + self.c_comm * commitment_losses
         return [total_losses, recon_losses, commitment_losses]
 
     def train(self):
-        accelerator = self.accelerator
-        device = accelerator.device
-        if accelerator.is_main_process:
-            writer = SummaryWriter(log_dir=self.model_dir)
+        writer = SummaryWriter(log_dir=self.model_dir)
 
         self.logger.info("Initial Evaluating ...")
         losses = self.eval()
@@ -153,26 +130,24 @@ class Trainer(object):
                 commitment_losses = 0
                 total_losses = 0.
                 for _ in range(self.accum_grad):
-                    mel = mel.to(device).squeeze(1)
-                    with self.accelerator.autocast():
+                    mel = mel.to(self.device).squeeze(1)
+                    with torch.cuda.amp.autocast(self.use_fp16):
                         recon_loss, commitment_loss, mel_recon = self.vqvae(mel)
+                        recon_loss = torch.mean(recon_loss, dim=(1, 2))
                         recon_loss = torch.mean(recon_loss)
                         loss = recon_loss + self.c_comm * commitment_loss
                         loss = loss / self.accum_grad
-                    self.accelerator.backward(loss)
+                    loss.backward()
                     total_losses += loss
                     recon_losses += recon_loss / self.accum_grad
                     commitment_losses += commitment_loss / self.accum_grad
 
-                grad_norm = get_grad_norm(self.vqvae)
-                if accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(self.vqvae.parameters(), self.grad_clip)
-                accelerator.wait_for_everyone()
-                self.optimizer.step()
+                grad_norm = clip_grad_norm_(self.vqvae.parameters(), self.grad_clip)
+                if torch.isfinite(grad_norm):
+                    self.optimizer.step()
                 self.optimizer.zero_grad()
-                accelerator.wait_for_everyone()
 
-                if accelerator.is_main_process and self.global_step % self.log_interval == 0:
+                if self.global_step % self.log_interval == 0:
                     lr = self.optimizer.param_groups[0]["lr"]
                     losses = [total_losses, recon_losses, commitment_losses]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
@@ -180,7 +155,7 @@ class Trainer(object):
                         ))
                     self.logger.info([x.item() for x in losses] + [self.global_step, lr])
 
-                if accelerator.is_main_process and self.global_step % self.eval_interval == 0:
+                if self.global_step % self.eval_interval == 0:
                     self.logger.info("Evaluating ...")
                     losses = self.eval()
                     self.logger.info([x.item() for x in losses])
@@ -189,7 +164,7 @@ class Trainer(object):
                     if keep_ckpts > 0:
                         clean_checkpoints(path_to_models=self.model_dir,
                                           n_ckpts_to_keep=keep_ckpts, sort_by_time=True)
-                    self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
+                    self.save_checkpoint(self.vqvae, self.model_dir.joinpath(f"model_{self.global_step}.pth"))
                  
                     scalar_dict = {"loss": total_losses, "loss_mel": recon_losses, "loss_commitment": commitment_losses,
                                    "loss/grad": grad_norm}
@@ -200,7 +175,7 @@ class Trainer(object):
                     )
                 self.global_step += 1
             self.scheduler.step()
-        accelerator.print('training complete')
+        self.logger.info('training complete')
 
 
 def get_args():
