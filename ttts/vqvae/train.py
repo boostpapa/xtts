@@ -105,11 +105,12 @@ class Trainer(object):
             for batch_idx, mel in enumerate(self.eval_data_loader):
                 mel = mel.to(self.device).squeeze(1)
                 recon_loss, commitment_loss, mel_recon = model(mel)
-                recon_loss = torch.mean(recon_loss, dim=(1, 2))
-                recon_loss = torch.sum(recon_loss)
-                recon_losses += recon_loss
-                commitment_losses += commitment_loss
-                num_samples += mel.shape[0]
+                #recon_loss = torch.mean(recon_loss, dim=(1, 2))
+                #recon_loss = torch.sum(recon_loss)
+                num_sample = mel.shape[0]
+                recon_losses += recon_loss * num_sample
+                commitment_losses += commitment_loss * num_sample
+                num_samples += num_sample
 
         model.train()
         recon_losses /= num_samples
@@ -133,8 +134,8 @@ class Trainer(object):
                     mel = mel.to(self.device).squeeze(1)
                     with torch.cuda.amp.autocast(self.use_fp16):
                         recon_loss, commitment_loss, mel_recon = self.vqvae(mel)
-                        recon_loss = torch.mean(recon_loss, dim=(1, 2))
-                        recon_loss = torch.mean(recon_loss)
+                        #recon_loss = torch.mean(recon_loss, dim=(1, 2))
+                        #recon_loss = torch.mean(recon_loss)
                         loss = recon_loss + self.c_comm * commitment_loss
                         loss = loss / self.accum_grad
                     loss.backward()

@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from einops import rearrange
+from ssim import SSIM
 
 
 def default(val, d):
@@ -214,6 +215,7 @@ class DiscreteVAE(nn.Module):
         encoder_norm=False,
         activation="relu",
         smooth_l1_loss=False,
+        ssim_loss_weight=0.0,
         straight_through=False,
         normalization=None,  # ((0.5,) * 3, (0.5,) * 3),
         record_codes=False,
@@ -291,6 +293,8 @@ class DiscreteVAE(nn.Module):
         self.decoder = nn.Sequential(*dec_layers)
 
         self.loss_fn = F.smooth_l1_loss if smooth_l1_loss else F.mse_loss
+        self.ssim_loss_weight = ssim_loss_weight
+        self.loss_ssim = SSIM(size_average=True, nonnegative_ssim=False) if ssim_loss_weight > 0 else None
         self.codebook = Quantize(codebook_dim, num_tokens, new_return_order=True)
 
         # take care of normalization within class
@@ -376,7 +380,10 @@ class DiscreteVAE(nn.Module):
 
         # reconstruction loss
         out = out[..., :img.shape[-1]]
-        recon_loss = self.loss_fn(img, out, reduction="none")
+        recon_loss = self.loss_fn(img, out, reduction="mean")
+        if self.ssim_loss_weight > 0:
+            ssim_loss = (1 - self.loss_ssim(img, out)) * self.ssim_loss_weight
+            recon_loss += ssim_loss
 
         return recon_loss, commitment_loss, out
 
