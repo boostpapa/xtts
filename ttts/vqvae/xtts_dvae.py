@@ -383,7 +383,9 @@ class DiscreteVAE(nn.Module):
         recon_loss = self.loss_fn(img, out, reduction="mean")
         ssim_loss = 0
         if self.ssim_loss_weight > 0:
-            ssim_loss = (1 - self.loss_ssim(img, out)) * self.ssim_loss_weight
+            img1 = img.unsqueeze(1)
+            out1 = out.unsqueeze(1)
+            ssim_loss = (1 - self.loss_ssim(img1, out1)) * self.ssim_loss_weight
 
         return recon_loss, ssim_loss, commitment_loss, out
 

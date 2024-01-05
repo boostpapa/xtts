@@ -109,7 +109,7 @@ class Trainer(object):
                 #recon_loss = torch.sum(recon_loss)
                 num_sample = mel.shape[0]
                 recon_losses += recon_loss * num_sample
-                ssim_losses += ssim_losses * num_sample
+                ssim_losses += ssim_loss * num_sample
                 commitment_losses += commitment_loss * num_sample
                 num_samples += num_sample
 
@@ -122,6 +122,9 @@ class Trainer(object):
 
     def train(self):
         writer = SummaryWriter(log_dir=self.model_dir)
+        print(self.vqvae)
+        num_params = sum(p.numel() for p in self.vqvae.parameters())
+        print('the number of vqvae model parameters: {:,d}'.format(num_params))
 
         self.logger.info("Initial Evaluating ...")
         losses = self.eval()
@@ -154,7 +157,7 @@ class Trainer(object):
 
                 if self.global_step % self.log_interval == 0:
                     lr = self.optimizer.param_groups[0]["lr"]
-                    losses = [total_losses, ssim_losses, recon_losses, commitment_losses]
+                    losses = [total_losses, recon_losses, ssim_losses, commitment_losses]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
                             epoch, 100.0 * batch_idx / len(self.train_data_loader)
                         ))

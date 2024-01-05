@@ -38,9 +38,9 @@ def infer(mel_extractor, dvae, wav_path, sr, device):
     mel_img = plot_spectrogram_to_numpy(mel[0, :, :].detach().unsqueeze(-1).cpu())
     mel = mel.to(device).squeeze(1)
     #mel_recon = dvae.infer(mel)[0]
-    recon_loss, commitment_loss, mel_recon = dvae(mel)
-    recon_loss = torch.mean(recon_loss)
-    print([recon_loss.item(), commitment_loss.item()])
+    recon_loss, ssim_loss, commitment_loss, mel_recon = dvae(mel)
+    #recon_loss = torch.mean(recon_loss)
+    print([recon_loss.item(), ssim_loss.item(), commitment_loss.item()])
     mel_recon_img = plot_spectrogram_to_numpy(mel_recon[0, :, :].detach().unsqueeze(-1).cpu())
     return mel_img, mel_recon_img
 
