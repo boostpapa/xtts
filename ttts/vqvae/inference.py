@@ -17,24 +17,14 @@ def get_args():
     parser.add_argument('--config', required=True, default="./configs/config.json", help='config file')
     parser.add_argument('--outdir', required=True, help='ouput directory')
     parser.add_argument('--test_file', required=True, help='test file')
-    parser.add_argument('--gpu',
-                        type=int,
-                        default=0,
-                        help='gpu id for this local rank, -1 for cpu')
+    parser.add_argument('--gpu', type=int, default=0, help='gpu id for this local rank, -1 for cpu')
+    parser.add_argument('--infer', action='store_true', default=False, help='decode vqvae for mel images reconstruction.')
+    parser.add_argument('--vqcode', action='store_true', default=False,help='extract vq codes')
     args = parser.parse_args()
     return args
 
 
-def infer(mel_extractor, dvae, wav_path, sr, device):
-    wave, sample_rate = torchaudio.load(wav_path)
-    # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
-    if wave.size(0) > 1:  # mix to mono
-        wave = wave[0].unsqueeze(0)
-    if sample_rate != sr:
-        transform = torchaudio.transforms.Resample(sample_rate, sr)
-        wave = transform(wave)
-
-    mel = mel_extractor(wave)
+def infer(mel, dvae, device):
     mel_img = plot_spectrogram_to_numpy(mel[0, :, :].detach().unsqueeze(-1).cpu())
     mel = mel.to(device).squeeze(1)
     #mel_recon = dvae.infer(mel)[0]
@@ -43,6 +33,12 @@ def infer(mel_extractor, dvae, wav_path, sr, device):
     print([recon_loss.item(), ssim_loss.item(), commitment_loss.item()])
     mel_recon_img = plot_spectrogram_to_numpy(mel_recon[0, :, :].detach().unsqueeze(-1).cpu())
     return mel_img, mel_recon_img
+
+
+def extract_vq(mel, dvae, device):
+    mel = mel.to(device).squeeze(1)
+    vq_code = dvae.get_codebook_indices(mel)
+    return vq_code
 
 
 def main():
@@ -71,10 +67,24 @@ def main():
         for line in fin:
             wav_path = line.strip()
             print(wav_path)
-            mel_img, mel_recon_img = infer(mel_extractor, dvae, wav_path, sr=sample_rate, device=device)
-            img_name = re.split(r'/|\.', wav_path)[-2]
-            cv2.imwrite(f"{args.outdir}/{img_name}.png", mel_img)
-            cv2.imwrite(f"{args.outdir}/{img_name}_recon.png", mel_recon_img)
+
+            wave, sr = torchaudio.load(wav_path)
+            # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
+            if wave.size(0) > 1:  # mix to mono
+                wave = wave[0].unsqueeze(0)
+            if sr != sample_rate:
+                transform = torchaudio.transforms.Resample(sr, sample_rate)
+                wave = transform(wave)
+            mel = mel_extractor(wave)
+
+            if args.infer:
+                mel_img, mel_recon_img = infer(mel, dvae, device=device)
+                img_name = re.split(r'/|\.', wav_path)[-2]
+                cv2.imwrite(f"{args.outdir}/{img_name}.png", mel_img)
+                cv2.imwrite(f"{args.outdir}/{img_name}_recon.png", mel_recon_img)
+            elif args.vqcode:
+                code = extract_vq(mel, dvae, device=device)
+                print(code.tolist())
 
 
 if __name__ == '__main__':
