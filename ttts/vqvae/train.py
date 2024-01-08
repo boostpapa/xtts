@@ -12,7 +12,7 @@ import torch
 import os
 from torch.utils.data import DataLoader
 from torch import nn
-from torch.optim import AdamW
+from torch.optim import AdamW, Adam
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.nn.utils import clip_grad_norm_
 import argparse
@@ -75,6 +75,7 @@ class Trainer(object):
         self.logger = get_logger(self.model_dir)
         #self.ema_updater = EMA(0.999)
         self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
+        #self.optimizer = Adam(self.vqvae.parameters(), lr=self.cfg['train']['lr'])
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
         #self.dataloader = cycle(self.dataloader)
         self.accum_grad = self.cfg['train']['accum_grad']

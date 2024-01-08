@@ -67,7 +67,7 @@ class Trainer(object):
             print(">> DVAE weights restored from:", model_pth)
             #load_trained_modules(self.vqvae, model_pth)
             
-        self.accelerator = Accelerator(mixed_precision=precision)
+        self.accelerator = Accelerator(mixed_precision=precision, split_batches=True)
         self.model_dir = Path(args.model)
         if self.accelerator.is_main_process:
             # self.ema_model = self._get_target_encoder(self.vqvae).to(self.accelerator.device)
@@ -177,7 +177,7 @@ class Trainer(object):
                 self.optimizer.zero_grad()
                 accelerator.wait_for_everyone()
 
-                if accelerator.is_main_process and self.global_step % self.log_interval == 0:
+                if self.global_step % self.log_interval == 0:
                     lr = self.optimizer.param_groups[0]["lr"]
                     losses = [total_losses, recon_losses, ssim_losses, commitment_losses]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
@@ -190,12 +190,13 @@ class Trainer(object):
                     losses = self.eval()
                     self.logger.info([x.item() for x in losses])
                  
+                    '''
                     keep_ckpts = self.cfg['train']['keep_ckpts']
                     if keep_ckpts > 0:
                         clean_checkpoints(path_to_models=self.model_dir,
                                           n_ckpts_to_keep=keep_ckpts, sort_by_time=True)
                     self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
-                 
+                    '''
                     scalar_dict = {"loss": total_losses, "loss_mel": recon_losses, "loss_commitment": commitment_losses,
                                    "loss/grad": grad_norm}
                     summarize(
@@ -204,7 +205,14 @@ class Trainer(object):
                         scalars=scalar_dict
                     )
                 self.global_step += 1
+            # one epoch training finish
+            if accelerator.is_main_process:
+                self.logger.info(f"Evaluating Epoch: {epoch}")
+                losses = self.eval()
+                lr = self.optimizer.param_groups[0]["lr"]
+                self.logger.info([x.item() for x in losses] + [self.global_step, lr])
             self.scheduler.step()
+            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"))
         accelerator.print('training complete')
 
 
