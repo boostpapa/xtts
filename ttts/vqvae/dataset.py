@@ -9,7 +9,7 @@ import torch.utils.data
 import torchaudio
 import torchvision
 from tqdm import tqdm
-from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
+from ttts.vocoder.feature_extractors import MelSpectrogramFeatures, MelSpectrogramFeatures1
 
 
 class PreprocessedMelDataset(torch.utils.data.Dataset):
@@ -20,10 +20,14 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         with open(audio_paths, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.wav_paths.append(line.strip())
+
         self.pad_to = opt['dataset']['pad_to_samples']
         self.squeeze = opt['dataset']['squeeze']
         self.sample_rate = opt['dataset']['sample_rate']
-        self.mel_extractor = MelSpectrogramFeatures(**opt['dataset']['mel'])
+        if 'mel_type' in opt['dataset'] and opt['dataset']['mel_type'] == "librosa":
+            self.mel_extractor = MelSpectrogramFeatures1(**opt['dataset']['mel'])
+        else:
+            self.mel_extractor = MelSpectrogramFeatures(**opt['dataset']['mel'])
 
     def __getitem__(self, index):
 
