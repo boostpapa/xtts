@@ -5,6 +5,7 @@ import argparse
 import json
 import re
 import cv2
+import numpy as np
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
@@ -19,7 +20,8 @@ def get_args():
     parser.add_argument('--test_file', required=True, help='test file')
     parser.add_argument('--gpu', type=int, default=0, help='gpu id for this local rank, -1 for cpu')
     parser.add_argument('--infer', action='store_true', default=False, help='decode vqvae for mel images reconstruction.')
-    parser.add_argument('--vqcode', action='store_true', default=False,help='extract vq codes')
+    parser.add_argument('--vqcode', action='store_true', default=False, help='extract vq codes')
+    parser.add_argument('--npmel', action='store_true', default=False, help='save reconstrunction mel data.')
     args = parser.parse_args()
     return args
 
@@ -32,7 +34,7 @@ def infer(mel, dvae, device):
     #recon_loss = torch.mean(recon_loss)
     print([recon_loss.item(), ssim_loss.item(), commitment_loss.item()])
     mel_recon_img = plot_spectrogram_to_numpy(mel_recon[0, :, :].detach().unsqueeze(-1).cpu())
-    return mel_img, mel_recon_img
+    return mel_recon, mel_img, mel_recon_img
 
 
 def extract_vq(mel, dvae, device):
@@ -54,9 +56,9 @@ def main():
     dvae = DiscreteVAE(**cfg['vqvae'])
     dvae = dvae.to(device)
 
-    dvae.eval()
     dvae_checkpoint = torch.load(args.checkpoint, map_location=torch.device("cpu"))
     dvae.load_state_dict(dvae_checkpoint, strict=False)
+    dvae.eval()
 
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -78,10 +80,13 @@ def main():
             mel = mel_extractor(wave)
 
             if args.infer:
-                mel_img, mel_recon_img = infer(mel, dvae, device=device)
+                mel_recon, mel_img, mel_recon_img = infer(mel, dvae, device=device)
                 img_name = re.split(r'/|\.', wav_path)[-2]
                 cv2.imwrite(f"{args.outdir}/{img_name}.png", mel_img)
                 cv2.imwrite(f"{args.outdir}/{img_name}_recon.png", mel_recon_img)
+                if args.npmel:
+                    np.save(f"{args.outdir}/{img_name}_recon.npy", mel_recon.detach().cpu().numpy())
+                    np.save(f"{args.outdir}/{img_name}.npy", mel.detach().cpu().numpy())
             elif args.vqcode:
                 code = extract_vq(mel, dvae, device=device)
                 print(code.tolist())
