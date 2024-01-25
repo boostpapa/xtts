@@ -37,8 +37,12 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         if wave.size(0) > 1:  # mix to mono
             wave = wave[0].unsqueeze(0)
         if sample_rate != self.sample_rate:
-            transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
-            wave = transform(wave)
+            try:
+                transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
+                wave = transform(wave)
+            except:
+                print(f"Warning: {wav_file}, wave shape: {wave.shape}, sample_rate: {sample_rate}")
+                return None
         #print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
 
         mel = self.mel_extractor(wave)

@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 from einops import rearrange
-from ssim import SSIM
+from ttts.vqvae.ssim import SSIM
 
 
 def default(val, d):
@@ -381,7 +381,7 @@ class DiscreteVAE(nn.Module):
         # reconstruction loss
         out = out[..., :img.shape[-1]]
         recon_loss = self.loss_fn(img, out, reduction="mean")
-        ssim_loss = 0
+        ssim_loss = torch.zeros(size = (1,)).cuda()
         if self.ssim_loss_weight > 0:
             img1 = img.unsqueeze(1)
             out1 = out.unsqueeze(1)

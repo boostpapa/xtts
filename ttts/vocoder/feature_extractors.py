@@ -25,14 +25,16 @@ hann_window = {}
 
 
 def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax, center=False):
+    '''
     if torch.min(y) < -1.:
         print('min value is ', torch.min(y))
     if torch.max(y) > 1.:
         print('max value is ', torch.max(y))
+    '''
 
     global mel_basis, hann_window
     if fmax not in mel_basis:
-        mel = librosa_mel_fn(sampling_rate, n_fft, num_mels, fmin, fmax)
+        mel = librosa_mel_fn(sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax)
         mel_basis[str(fmax)+'_'+str(y.device)] = torch.from_numpy(mel).float().to(y.device)
         hann_window[str(y.device)] = torch.hann_window(win_size).to(y.device)
 
@@ -69,8 +71,8 @@ class FeatureExtractor(nn.Module):
 
 
 class MelSpectrogramFeatures(FeatureExtractor):
-    def __init__(self, sample_rate=24000, n_fft=1024, hop_length=256, win_length=1024,
-                    n_mels=80, mel_fmin=0, mel_fmax=8000, normalize=False, padding="center"):
+    def __init__(self, sample_rate=24000, n_fft=1024, hop_length=256, win_length=None,
+                    n_mels=100, mel_fmin=0, mel_fmax=None, normalize=False, padding="center"):
         super().__init__()
         if padding not in ["center", "same"]:
             raise ValueError("Padding must be 'center' or 'same'.")
@@ -80,7 +82,7 @@ class MelSpectrogramFeatures(FeatureExtractor):
             n_fft=n_fft,
             hop_length=hop_length,
             win_length=win_length,
-            power=2,
+            power=1,
             normalized=normalize,
             f_min=mel_fmin,
             f_max=mel_fmax,
@@ -93,7 +95,7 @@ class MelSpectrogramFeatures(FeatureExtractor):
             pad = self.mel_spec.win_length - self.mel_spec.hop_length
             audio = torch.nn.functional.pad(audio, (pad // 2, pad // 2), mode="reflect")
         mel = self.mel_spec(audio)
-        mel = safe_log(mel, clip_val=1e-5)
+        mel = safe_log(mel)
         return mel
 
 

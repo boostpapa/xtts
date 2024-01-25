@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
-from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
+from ttts.vocoder.feature_extractors import MelSpectrogramFeatures, MelSpectrogramFeatures1
 from ttts.utils.utils import plot_spectrogram_to_numpy
 
 
@@ -64,7 +64,11 @@ def main():
         os.makedirs(args.outdir)
 
     sample_rate = cfg['dataset']['sample_rate']
-    mel_extractor = MelSpectrogramFeatures(**cfg['dataset']['mel'])
+    if 'mel_type' in cfg['dataset'] and cfg['dataset']['mel_type'] == "librosa":
+        mel_extractor = MelSpectrogramFeatures1(**cfg['dataset']['mel'])
+    else:
+        mel_extractor = MelSpectrogramFeatures(**cfg['dataset']['mel'])
+
     with open(args.test_file) as fin:
         for line in fin:
             wav_path = line.strip()

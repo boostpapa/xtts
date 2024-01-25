@@ -147,7 +147,9 @@ class Trainer(object):
 
             self.logger.info("Initial Evaluating ...")
             losses = self.eval()
-            self.logger.info([x.item() for x in losses])
+            lr = self.optimizer.param_groups[0]["lr"]
+            self.logger.info([x.item() for x in losses] + [self.global_step, lr])
+            self.save_checkpoint(self.model_dir.joinpath(f"init.pth"))
 
         for epoch in range(0, self.num_epochs):
             for batch_idx, mel in enumerate(self.train_data_loader):
