@@ -42,11 +42,14 @@ class DiffusionDataset(torch.utils.data.Dataset):
         text = self.tok.encode(text)
         text_tokens = LongTensor(text)
 
-        mel_path = audiopath + '.mel.pth'
-        mel_raw = torch.load(mel_path)[0]
+        try:
+            mel_path = audiopath + '.mel.pth'
+            mel_raw = torch.load(mel_path)[0]
 
-        quant_path = audiopath + '.melvq.pth'
-        mel_codes = LongTensor(torch.load(quant_path)[0])
+            quant_path = audiopath + '.melvq.pth'
+            mel_codes = LongTensor(torch.load(quant_path)[0])
+        except:
+            return None
 
         split = random.randint(int(mel_raw.shape[1]//3), int(mel_raw.shape[1]//3*2))
         if random.random()>0.5:
