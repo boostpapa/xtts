@@ -4,10 +4,10 @@ import re
 import cn2an
 from pypinyin import lazy_pinyin, Style
 
-from text.symbols import punctuation
-from text.tone_sandhi import ToneSandhi
+from ttts.gpt.text.symbols import punctuation
+from ttts.gpt.text.tone_sandhi import ToneSandhi
 #from tn.chinese.normalizer import Normalizer
-from text.zh_normalization.text_normlization import TextNormalizer
+from .zh_normalization.text_normlization import TextNormalizer
 
 current_file_path = os.path.dirname(__file__)
 pinyin_to_symbol_map = {
@@ -15,10 +15,6 @@ pinyin_to_symbol_map = {
     for line in open(os.path.join(current_file_path, "opencpop-strict.txt")).readlines()
 }
 an2cn_normalizer = TextNormalizer()
-
-from transformers import AutoTokenizer
-LOCAL_PATH = "/asrfs/users/wd007/asr/tools/src/opensource/bert-vits2-dev/bert/chinese-roberta-wwm-ext-large"
-tokenizer = AutoTokenizer.from_pretrained(LOCAL_PATH)
 
 EN_WORD_TG = '▁'
 #import jieba
@@ -65,24 +61,6 @@ tone_modifier = ToneSandhi()
 ENCHARS = 'abcdefghijklmnopqrstuvwxyz0123456789'
 
 
-'''
-def _clean_space(text):
-  """"
-  处理多余的空格
-  """
-  #match_regex = re.compile(u'[\u4e00-\u9fa5。\.\',，:：《》、\(\)（）]{1} +(?<![a-zA-Z])|\d+ +| +\d+|[a-z A-Z]+')
-  match_regex = re.compile(u'[\u4e00-\u9fa5。\.\',，:：《》、\(\)（）' + "".join(punctuation) +  ']{1} +(?<![a-zA-Z])|\d+ +| +\d+|[a-z A-Z]+')
-  should_replace_list = match_regex.findall(text)
-  order_replace_list = sorted(should_replace_list,key=lambda i:len(i),reverse=True)
-  for i in order_replace_list:
-    if i == u' ':
-      continue
-    new_i = i.strip()
-    text = text.replace(i,new_i)
-  return text
-'''
-
-
 def _clean_space(text):
     """"
     处理多余的空格
@@ -114,10 +92,10 @@ def replace_punctuation(text):
     return replaced_text
 
 
-def g2p(text):
+def g2w(text):
     pattern = r"(?<=[{0}])\s*".format("".join(punctuation))
     sentences = [i for i in re.split(pattern, text) if i.strip() != ""]
-    phones = _g2p(sentences)
+    phones = _g2w(sentences)
     return phones
 
 
@@ -170,7 +148,7 @@ def _split_enwords(seg_cut):
     return segs
 
 
-def _g2p(segments):
+def _g2w(segments):
     phones_list = []
     for seg in segments:
         # Replace all English words in the sentence
@@ -293,7 +271,7 @@ if __name__ == "__main__":
     print(text)
     text = text_normalize(text)
     print(text)
-    phones = g2p(text)
+    phones = g2w(text)
     print(phones)
 
     #print(phones, tones, word2ph)

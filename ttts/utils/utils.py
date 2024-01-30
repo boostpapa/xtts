@@ -27,6 +27,13 @@ def get_logger(model_dir, filename="train.log"):
     logger.addHandler(h)
     return logger
 
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
 def get_paths_with_cache(search_path, cache_path=None):
     out_paths=None
     if cache_path!=None and os.path.exists(cache_path):

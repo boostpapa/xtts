@@ -3,7 +3,7 @@ import os
 import re
 from g2p_en import G2p
 
-from text import symbols
+from ttts.gpt.text import symbols
 
 from nemo_text_processing.text_normalization.normalize import Normalizer
 normalizer = Normalizer(input_case='cased', lang='en')

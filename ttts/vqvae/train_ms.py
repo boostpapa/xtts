@@ -49,15 +49,15 @@ class Trainer(object):
         self.cfg = json.load(open(args.config))
         self.train_dataset = PreprocessedMelDataset(self.cfg['dataset']['training_files'], self.cfg)
         self.eval_dataset = PreprocessedMelDataset(self.cfg['dataset']['validation_files'], self.cfg)
-        self.train_data_loader = DataLoader(self.train_dataset, **self.cfg['dataloader'])
-        self.eval_data_loader = DataLoader(self.eval_dataset, **self.cfg['dataloader'])
+        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg['dataloader'])
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg['dataloader'])
         self.train_steps = self.cfg['train']['train_steps']
         self.eval_interval = self.cfg['train']['eval_interval']
         self.log_interval = self.cfg['train']['log_interval']
         self.num_epochs = self.cfg['train']['epochs']
         self.c_comm = 0.25
         self.use_fp16 = self.cfg['train']['fp16_run']
-        precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16'] 
+        precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
         self.vqvae = DiscreteVAE(**self.cfg['vqvae'])
         if 'pretrain_model' in self.cfg['train']:
             model_pth = self.cfg['train']['pretrain_model']
@@ -78,7 +78,7 @@ class Trainer(object):
         #self.ema_updater = EMA(0.999)
         self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
-        self.vqvae, self.train_data_loader, self.optimizer = self.accelerator.prepare(self.vqvae, self.train_data_loader, self.optimizer)
+        self.vqvae, self.train_dataloader, self.optimizer = self.accelerator.prepare(self.vqvae, self.train_dataloader, self.optimizer)
         #self.dataloader = cycle(self.dataloader)
         self.accum_grad = self.cfg['train']['accum_grad']
         self.grad_clip = self.cfg['train']['grad_clip']
@@ -99,7 +99,7 @@ class Trainer(object):
             self.accelerator.save(unwrapped_model.state_dict(), path)
             #torch.save(unwrapped_model, path)
 
-    def load_model(self, path):
+    def load_model(self, model_path):
         accelerator = self.accelerator
         device = accelerator.device
         data = torch.load(model_path, map_location=device)
@@ -119,7 +119,7 @@ class Trainer(object):
         ssim_losses = 0
         num_samples = 0
         with torch.no_grad():
-            for batch_idx, mel in enumerate(self.eval_data_loader):
+            for batch_idx, mel in enumerate(self.eval_dataloader):
                 mel = mel.to(device).squeeze(1)
                 recon_loss, ssim_loss, commitment_loss, mel_recon = model(mel)
                 #recon_loss = torch.mean(recon_loss, dim=(1, 2))
@@ -152,7 +152,7 @@ class Trainer(object):
             self.save_checkpoint(self.model_dir.joinpath(f"init.pth"))
 
         for epoch in range(0, self.num_epochs):
-            for batch_idx, mel in enumerate(self.train_data_loader):
+            for batch_idx, mel in enumerate(self.train_dataloader):
                 recon_losses = 0
                 ssim_losses = 0
                 commitment_losses = 0
@@ -183,7 +183,7 @@ class Trainer(object):
                     lr = self.optimizer.param_groups[0]["lr"]
                     losses = [total_losses, recon_losses, ssim_losses, commitment_losses]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
-                            epoch, 100.0 * batch_idx / len(self.train_data_loader)
+                            epoch, 100.0 * batch_idx / len(self.train_dataloader)
                         ))
                     self.logger.info([x.item() for x in losses] + [self.global_step, lr])
 
