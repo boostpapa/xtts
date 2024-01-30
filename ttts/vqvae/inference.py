@@ -10,6 +10,7 @@ import numpy as np
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures, MelSpectrogramFeatures1
 from ttts.utils.utils import plot_spectrogram_to_numpy
+from ttts.utils.infer_utils import load_model
 
 
 def get_args():
@@ -22,6 +23,7 @@ def get_args():
     parser.add_argument('--infer', action='store_true', default=False, help='decode vqvae for mel images reconstruction.')
     parser.add_argument('--vqcode', action='store_true', default=False, help='extract vq codes')
     parser.add_argument('--npmel', action='store_true', default=False, help='save reconstrunction mel data.')
+    parser.add_argument('--rwav', action='store_true', default=False, help='save reconstrunction wav.')
     args = parser.parse_args()
     return args
 
@@ -57,8 +59,15 @@ def main():
     dvae = dvae.to(device)
 
     dvae_checkpoint = torch.load(args.checkpoint, map_location=torch.device("cpu"))
+    if 'model' in dvae_checkpoint:
+        dvae_checkpoint = dvae_checkpoint['model']
     dvae.load_state_dict(dvae_checkpoint, strict=False)
+
     dvae.eval()
+
+    if args.rwav:
+        from vocos import Vocos
+        vocos = Vocos.from_pretrained("/speechwork/users/wd007/tts/xtts2/model/charactr/vocos-mel-24khz").to(device)
 
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -85,12 +94,17 @@ def main():
 
             if args.infer:
                 mel_recon, mel_img, mel_recon_img = infer(mel, dvae, device=device)
-                img_name = re.split(r'/|\.', wav_path)[-2]
-                cv2.imwrite(f"{args.outdir}/{img_name}.png", mel_img)
-                cv2.imwrite(f"{args.outdir}/{img_name}_recon.png", mel_recon_img)
+                fname = re.split(r'/|\.', wav_path)[-2]
+                cv2.imwrite(f"{args.outdir}/{fname}.png", mel_img)
+                cv2.imwrite(f"{args.outdir}/{fname}_recon.png", mel_recon_img)
                 if args.npmel:
-                    np.save(f"{args.outdir}/{img_name}_recon.npy", mel_recon.detach().cpu().numpy())
-                    np.save(f"{args.outdir}/{img_name}.npy", mel.detach().cpu().numpy())
+                    np.save(f"{args.outdir}/{fname}_recon.npy", mel_recon.detach().cpu().numpy())
+                    np.save(f"{args.outdir}/{fname}.npy", mel.detach().cpu().numpy())
+                if args.rwav:
+                    wav = vocos.decode(mel.to(device))
+                    torchaudio.save(f"{args.outdir}/{fname}.wav", wav.detach().cpu(), sample_rate)
+                    wav_recon = vocos.decode(mel_recon)
+                    torchaudio.save(f"{args.outdir}/{fname}_recon.wav", wav_recon.detach().cpu(), sample_rate)
             elif args.vqcode:
                 code = extract_vq(mel, dvae, device=device)
                 print(code.tolist())
