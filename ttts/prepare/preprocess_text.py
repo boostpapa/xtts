@@ -7,22 +7,37 @@ from multiprocessing import Pool
 
 from tqdm import tqdm
 import click
-from ttts.gpt.text.cleaner import clean_text
+from ttts.gpt.text.cleaner import clean_text1
 
 cleaned_text = []
+cleaned_file_path = "data/all.txt.cleaned"
+flag = "w"
 
 
 def callback(line):
     global cleaned_text
-    cleaned_text.append(line)
+    global cleaned_file_path
+    global flag
+    if line is not None:
+        cleaned_text.append(line)
+    #print(f"{len(cleaned_text)} {cleaned_file_path} {line}")
+    
+    if len(cleaned_text) >= 5000:
+        with open(cleaned_file_path, flag, encoding="utf-8") as out_file:
+            for line in cleaned_text:
+                if line is not None:
+                    out_file.write(line)
+            cleaned_text.clear()
+            flag = "a+"
 
 
-def clean_text(line):
+def process_line(line):
     try:
-        utt, spk, language, text = line.strip().split("|")
-        norm_text, phones = clean_text(text, language)
-        cleaned_line = "{}|{}|{}|{}|{}\n".format(
-                utt,
+        key, wav, spk, language, text = line.strip().split("|")
+        norm_text, phones = clean_text1(text, language)
+        cleaned_line = "{}|{}|{}|{}|{}|{}\n".format(
+                key,
+                wav,
                 spk,
                 language,
                 norm_text,
@@ -32,6 +47,12 @@ def clean_text(line):
     except Exception as e:
         print(line)
         print(f"生成训练集和验证集时发生错误！, 详细信息:\n{e}")
+
+
+
+def multiplication(num):
+    return num*(num+1)
+
 
 
 @click.command()
@@ -57,23 +78,31 @@ def preprocess(
     clean: bool,
     num_processes: int,
 ):
+    global cleaned_text
+    global cleaned_file_path
+    global flag
     if cleaned_path == "" or cleaned_path is None:
         cleaned_path = transcription_path + ".cleaned"
 
-    global cleaned_text
+    cleaned_file_path = cleaned_path
     if clean:
+        pool = Pool(processes=num_processes)
         with open(transcription_path, "r", encoding="utf-8") as trans_file:
-            lines = trans_file.readlines()
-            # print(lines, ' ', len(lines))
-            with Pool(processes=num_processes) as pool:
-                if len(lines) != 0:
-                    for line in tqdm(lines):
-                        pool.apply_async(func=clean_text, args=(line,), callback=callback)
-                        if lines % 2000 == 0:
-                            with open(cleaned_path, "w", encoding="utf-8") as out_file:
-                                for line in cleaned_text:
-                                    out_file.write(line)
-                            cleaned_text.clear()
+            '''
+            with open(cleaned_path, "w", encoding="utf-8") as out_file:
+                for line in tqdm(trans_file):
+                    cleaned_line = process_line(line)
+                    out_file.write(cleaned_line)
+            '''
+
+            for line in tqdm(trans_file):
+                pool.apply_async(func=process_line, args=(line,), callback=callback)
+            pool.close()
+            pool.join()
+            with open(cleaned_path, flag, encoding="utf-8") as out_file:
+                for line in cleaned_text:
+                    if line is not None:
+                        out_file.write(line)
 
     transcription_path = cleaned_path
     spk_utt_map = defaultdict(list)
@@ -85,18 +114,18 @@ def preprocess(
         countSame = 0
         countNotFound = 0
         for line in f.readlines():
-            utt, spk, language, text, phones = line.strip().split("|")
-            if utt in audioPaths:
+            key, wav, spk, language, text, phones = line.strip().split("|")
+            if wav in audioPaths:
                 # 过滤数据集错误：相同的音频匹配多个文本，导致后续bert出问题
                 print(f"重复音频文本：{line}")
                 countSame += 1
                 continue
-            if not os.path.isfile(utt):
+            if not os.path.isfile(wav):
                 # 过滤数据集错误：不存在对应音频
-                print(f"没有找到对应的音频：{utt}")
+                print(f"没有找到对应的音频：{wav}")
                 countNotFound += 1
                 continue
-            audioPaths.add(utt)
+            audioPaths.add(wav)
             spk_utt_map[spk].append(line)
 
             if spk not in spk_id_map.keys():
@@ -107,10 +136,10 @@ def preprocess(
     train_list = []
     val_list = []
 
-    for spk, utts in spk_utt_map.items():
-        shuffle(utts)
-        val_list += utts[:val_per_spk]
-        train_list += utts[val_per_spk:]
+    for spk, wavs in spk_utt_map.items():
+        shuffle(wavs)
+        val_list += wavs[:val_per_spk]
+        train_list += wavs[val_per_spk:]
 
     if len(val_list) > max_val_total:
         train_list += val_list[max_val_total:]

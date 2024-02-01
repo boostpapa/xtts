@@ -4,6 +4,7 @@ import re
 from g2p_en import G2p
 
 from ttts.gpt.text import symbols
+from ttts.gpt.text.symbols import punctuation
 
 from nemo_text_processing.text_normalization.normalize import Normalizer
 normalizer = Normalizer(input_case='cased', lang='en')
@@ -159,13 +160,18 @@ def replace_punctuation(text):
 
     replaced_text = pattern.sub(lambda x: rep_map[x.group()], text)
 
-    # replaced_text = re.sub(
-    #     r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
-    #     + "".join(punctuation)
-    #     + r"]+",
-    #     "",
-    #     replaced_text,
-    # )
+    ## 保留英文和指定标点符号
+    replaced_text = re.sub(r"[^a-zA-Z " + "".join(punctuation) + r"]+", "", replaced_text)
+
+    '''
+    replaced_text = re.sub(
+        r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3005"
+        + "".join(punctuation)
+        + r"]+",
+        "",
+        replaced_text,
+    )
+    '''
 
     return replaced_text
 
@@ -405,6 +411,7 @@ if __name__ == "__main__":
     # print(get_dict())
     # print(eng_word_to_phoneme("hello"))
     text = "Mr. Arp had not begun life so sourly: as a youth he had been proud of GPU 49%"
+    text = "He sat at his CafÃ©, three quarters down the Boulevard,"
     print(text)
     text = text_normalize(text)
     print(text)
