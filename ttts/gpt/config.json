@@ -1,17 +1,28 @@
 {
   "train": {
-    "train_steps":100000,
-    "val_freq" : 100,
-    "save_freq" : 1000,
-    "keep_ckpts" : 3,
-    "lr":1e-4,
-    "logs_folder":"ttts/gpt/logs",
-    "text_weight":0.01,
-    "mel_weight":1,
-    "accumulate_num":16
+    "train_steps": 100000,
+    "val_freq": 100,
+    "save_freq": 1000,
+    "keep_ckpts": 3,
+    "lr": 1e-4,
+    "text_weight": 0.01,
+    "mel_weight": 1.0,
+    "accum_grad": 16
   },
   "dataset": {
-    "path":"/home/hyc/tortoise_plus_zh/ttts/datasets/databaker_data.jsonl"
+    "training_files": "filelists/train.list",
+    "validation_files": "filelists/val.list",
+    "sample_rate": 24000,
+    "squeeze": false,
+    "mel": {
+      "sample_rate": 24000,
+      "n_fft": 1024,
+      "hop_length": 256,
+      "win_length": 1024,
+      "n_mels": 100,
+      "mel_fmin": 0,
+      "normalize": false
+    }
   },
   "gpt":{
     "model_dim":1024,
@@ -25,16 +36,30 @@
     "start_text_token":255,
     "train_solo_embeddings":false
   },
+  "vqvae":{
+    "channels": 100,
+    "num_tokens": 8192,
+    "hidden_dim": 512,
+    "num_resnet_blocks": 3,
+    "codebook_dim": 512,
+    "num_layers": 2,
+    "positional_dims": 1,
+    "kernel_size": 3,
+    "smooth_l1_loss": true,
+    "ssim_loss_weight": 0.5,
+    "use_transposed_convs": false
+  },
+  "dvae_checkpoint": "/speechwork/users/wd007/tts/xtts2/vqvae/s4/exp/baseline_lossl1_ssim1/epoch_19.pth",
   "dataloader":
   {
     "batch_size" : 8,
     "shuffle": true,
-    "num_workers" : 64,
-    "drop_last":true, 
-    "pin_memory":true
+    "num_workers": 4,
+    "drop_last": false,
+    "pin_memory": true
   },
   "comment":{
-    "sampler":"sampler", 
+    "sampler":"sampler",
     "collate_fn":"collate_fn"
   }
 }

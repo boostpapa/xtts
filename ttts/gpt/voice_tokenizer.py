@@ -41,7 +41,7 @@ class VoiceBpeTokenizer:
         return txt
 
     def encode(self, txt):
-        txt = self.preprocess_text(txt)
+        #txt = self.preprocess_text(txt)
         txt = txt.replace(' ', '[SPACE]')
         return self.tokenizer.encode(txt).ids
 
