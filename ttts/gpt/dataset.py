@@ -33,7 +33,8 @@ class GptTTSDataset(torch.utils.data.Dataset):
             strs = line.strip().split("|")
             if len(strs) < 6:
                 return None
-            cleand_text = strs[5]
+            # [language] + cleand_text
+            cleand_text = f"[{strs[3]}] {strs[5]}"
             seqid = self.tokenizer.encode(cleand_text)
             text = LongTensor(seqid)
 
@@ -62,7 +63,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
         except:
             return None
 
-        if text.shape[0] > 400 or mel.shape[1] > 600:
+        if text.shape[0] > 300 or mel.shape[1] > 600:
             return None
 
         return text, raw_mel, cond_mel, wav_length
