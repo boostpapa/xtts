@@ -4,6 +4,7 @@ from random import shuffle
 from typing import Optional
 import os
 from multiprocessing import Pool
+from functools import partial
 
 from tqdm import tqdm
 import click
@@ -43,10 +44,12 @@ def process_line(line):
                 norm_text,
                 " ".join(phones),
             )
+        #print(cleaned_line, end="")
         return cleaned_line
     except Exception as e:
-        print(line)
-        print(f"生成训练集和验证集时发生错误！, 详细信息:\n{e}")
+        print(line, end="")
+        print(f"生成训练集和验证集时发生错误！, 详细信息: {e}")
+        return None
 
 
 
@@ -89,20 +92,25 @@ def preprocess(
         pool = Pool(processes=num_processes)
         with open(transcription_path, "r", encoding="utf-8") as trans_file:
             '''
-            with open(cleaned_path, "w", encoding="utf-8") as out_file:
-                for line in tqdm(trans_file):
-                    cleaned_line = process_line(line)
-                    out_file.write(cleaned_line)
+            lines = trans_file.readlines()
+            with Pool(processes=num_processes) as pool:
+                for _ in tqdm(pool.imap_unordered(partial(process_line), lines), total=len(lines)):
+                    pass
             '''
-
-            for line in tqdm(trans_file):
-                pool.apply_async(func=process_line, args=(line,), callback=callback)
-            pool.close()
-            pool.join()
-            with open(cleaned_path, flag, encoding="utf-8") as out_file:
-                for line in cleaned_text:
-                    if line is not None:
-                        out_file.write(line)
+            if num_processes == 1:
+                with open(cleaned_path, "w", encoding="utf-8") as out_file:
+                    for line in tqdm(trans_file):
+                        cleaned_line = process_line(line)
+                        out_file.write(cleaned_line)
+            else:
+                for line in tqdm(trans_file):
+                    pool.apply_async(func=process_line, args=(line,), callback=callback)
+                pool.close()
+                pool.join()
+                with open(cleaned_path, flag, encoding="utf-8") as out_file:
+                    for line in cleaned_text:
+                        if line is not None:
+                            out_file.write(line)
 
     transcription_path = cleaned_path
     spk_utt_map = defaultdict(list)
