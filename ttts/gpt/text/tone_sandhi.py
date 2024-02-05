@@ -653,7 +653,9 @@ class ToneSandhi:
                     i - 2 >= 0
                     and seg[i - 1][0] == "一"
                     and seg[i - 2][0] == word
-                    and pos == "v"
+                    and len(word) == 1
+                    and seg[i - 2][1] == "v"
+                    #and (pos == "v" or pos == "n")
                 ):
                     continue
                 else:
