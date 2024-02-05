@@ -50,7 +50,7 @@ def main():
     print(args)
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
+    #os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
 
