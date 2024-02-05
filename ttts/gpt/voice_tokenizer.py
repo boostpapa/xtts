@@ -50,6 +50,7 @@ class VoiceBpeTokenizer:
             seq = seq.cpu().numpy()
         txt = self.tokenizer.decode(seq, skip_special_tokens=False).replace(' ', '')
         txt = txt.replace('[SPACE]', ' ')
+        txt = txt.replace('[START]', '')
         txt = txt.replace('[STOP]', '')
         txt = txt.replace('[UNK]', '')
 
@@ -93,7 +94,7 @@ def train(train_file):
         #for i in range(0, len(bcd), batch_size):
         #    yield [preprocess_word(t) for t in bcd[i:i+batch_size]['text']]
 
-    trainer = BpeTrainer(special_tokens=['[STOP]', '[UNK]', '[SPACE]', '[ZH]', '[EN]', '[JA]'], vocab_size=2048)
+    trainer = BpeTrainer(special_tokens=['[START]', '[STOP]', '[UNK]', '[SPACE]', '[ZH]', '[EN]', '[JA]'], vocab_size=2048)
     tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
     tokenizer.pre_tokenizer = Whitespace()
     tokenizer.train_from_iterator(batch_iterator(), trainer, length=len(ttsd))#+len(bcd))
@@ -126,6 +127,6 @@ if __name__ == '__main__':
     '''
     python script/all_text_to_one_file.py 
     '''
-    #train()
+    train()
     #test()
-    test_new()
+    #test_new()

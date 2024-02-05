@@ -48,12 +48,12 @@ class Trainer(object):
     def __init__(self, args):
         json_config = json.load(open(args.config))
         self.cfg = AttrDict(json_config)
-        self.train_dataset = GptTTSDataset(self.cfg['dataset']['training_files'], self.cfg.dataset)
-        self.eval_dataset = GptTTSDataset(self.cfg['dataset']['validation_files'], self.cfg.dataset)
-        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg['dataloader'], collate_fn=GptTTSCollater(self.cfg))
-        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg['dataloader'], collate_fn=GptTTSCollater(self.cfg))
-        self.train_steps = self.cfg['train']['train_steps']
-        self.eval_interval = self.cfg['train']['eval_interval']
+        self.train_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['training_files'])
+        self.eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'])
+        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
+        self.train_steps = self.cfg.train['train_steps']
+        self.eval_interval = self.cfg.train['eval_interval']
         self.log_interval = self.cfg['train']['log_interval']
         self.num_epochs = self.cfg['train']['epochs']
         self.use_fp16 = self.cfg['train']['fp16_run']
@@ -84,7 +84,7 @@ class Trainer(object):
 
         self.optimizer = AdamW(self.gpt.parameters(),lr=self.cfg['train']['lr'], betas=(0.9, 0.96), weight_decay=0.01)
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=warmup)
-        self.gpt, self.dvae, self.dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.dataloader, self.optimizer, self.scheduler)
+        self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
 
         self.mel_loss_weight = self.cfg['train']['mel_weight']
         self.text_loss_weight = self.cfg['train']['text_weight']
@@ -143,9 +143,11 @@ class Trainer(object):
         with torch.no_grad():
             for batch_idx, batch in enumerate(self.eval_dataloader):
                 # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
-                input_data = [batch['padded_raw_mel'], batch['padded_text'], batch['text_lengths'],
-                              batch['padded_qmel'], batch['wav_lens']]
+                input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
+                                batch['padded_raw_mel'], batch['wav_lens']]
                 input_data = [d.to(device) for d in input_data]
+                # get vqvae codes from raw mel
+                input_data[3] = self.dvae.get_codebook_indices(input_data[3])
                 loss_text, loss_mel, mel_logits = model(*input_data)
                 num_sample = input_data[0].shape[0]
                 text_losses += loss_text * num_sample

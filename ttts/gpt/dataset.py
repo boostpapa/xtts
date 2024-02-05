@@ -11,33 +11,38 @@ import torchaudio
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
+from ttts.utils.utils import AttrDict, get_logger
 
 
 class GptTTSDataset(torch.utils.data.Dataset):
-    def __init__(self, datafile, cfg):
-        self.tokenizer = VoiceBpeTokenizer(cfg['dataset']['gpt_vocab'])
+    def __init__(self, cfg, datafile):
+        self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
         self.datalist = []
         with open(datafile, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.datalist.append(line.strip())
 
-        self.squeeze = cfg['dataset']['squeeze']
-        self.sample_rate = cfg['dataset']['sample_rate']
-        self.mel_extractor = MelSpectrogramFeatures(**cfg['dataset']['mel'])
+        self.squeeze = cfg.dataset['squeeze']
+        self.sample_rate = cfg.dataset['sample_rate']
+        self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
 
     def __getitem__(self, index):
         try:
             # Fetch text and add start/stop tokens.
             line = self.datalist[index]
-            # key, wav, spk, language, text, cleand_text
+            #key, wav_path, spkid, language, raw_text, cleand_text
             strs = line.strip().split("|")
             if len(strs) < 6:
                 return None
             # [language] + cleand_text
             cleand_text = f"[{strs[3]}] {strs[5]}"
+            #print(f"cleand_text: {cleand_text}")
             seqid = self.tokenizer.encode(cleand_text)
+            #print(f"seqid: {seqid}")
             text = LongTensor(seqid)
+            #print(f"text.shape: {text} {len(text)}")
 
+            key = strs[0]
             wav_path = strs[1]
             wave, sample_rate = torchaudio.load(wav_path)
             # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
@@ -53,6 +58,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
 
             mel = self.mel_extractor(wave)[0]
             raw_mel = mel
+            #print(f"raw_mel.shape: {raw_mel.shape}")
 
             wav_length = mel.shape[1]*256
             split = random.randint(int(mel.shape[1]//3), int(mel.shape[1]//3*2))
@@ -63,7 +69,8 @@ class GptTTSDataset(torch.utils.data.Dataset):
         except:
             return None
 
-        if text.shape[0] > 300 or mel.shape[1] > 600:
+        if text.shape[0] > 300 or raw_mel.shape[1] > 2000:
+            print(f"Warning: {key} text len {text.shape[0]} exceed 300 , raw mel len {raw_mel.shape[1]} exceed 2000.")
             return None
 
         return text, raw_mel, cond_mel, wav_length
@@ -85,8 +92,10 @@ class GptTTSCollater():
         max_text_len = max(text_lens)
         # max_text_len = self.cfg['gpt']['max_text_tokens']
 
-        raw_mel_lens = [len(x[1]) for x in batch]
+        raw_mel_lens = [x[1].shape[1] for x in batch]
+        #print(raw_mel_lens)
         max_raw_mel_len = max(raw_mel_lens)
+        #print(max_raw_mel_len)
         # max_qmel_len = self.cfg['gpt']['max_mel_tokens']
 
         cond_mel_lens = [x[2].shape[1] for x in batch]
@@ -104,7 +113,7 @@ class GptTTSCollater():
             text, raw_mel, cond_mel, wav = sample
             text = F.pad(text, (0, max_text_len-len(text)), value=0)
             texts.append(text)
-            raw_mels.append(F.pad(raw_mel, (0, max_raw_mel_len-len(raw_mel)), value=0))
+            raw_mels.append(F.pad(raw_mel, (0, max_raw_mel_len-raw_mel.shape[1]), value=0))
             cond_mels.append(F.pad(cond_mel, (0, max_cond_mel_len-cond_mel.shape[1]), value=0))
 
         padded_raw_mel = torch.stack(raw_mels)
@@ -130,12 +139,14 @@ if __name__ == '__main__':
         'batch_size': 16,
         'mel_vocab_size': 512,
     }
-    cfg = json.load(open('configs/config.json'))
-    ds = GptTTSDataset(cfg)
+    json_cfg = json.load(open('configs/config.json'))
+    cfg = AttrDict(json_cfg)
+    ds = GptTTSDataset(cfg, cfg['dataset']['validation_files'])
     dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=GptTTSCollater(cfg))
     i = 0
     m = []
     max_text = 0
     max_mel = 0
-    for b in tqdm(dl):
+    for batch in tqdm(dl):
+        #print(batch['padded_raw_mel'].shape, batch['raw_mel_lengths'])
         break
