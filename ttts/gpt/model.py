@@ -414,7 +414,7 @@ class UnifiedVoice(nn.Module):
         for b in range(len(mel_lengths)):
             # Due to the convolutional nature of how these tokens are generated,
             # it would be best if the model predicts a token past the actual last token.
-            actual_end = mel_lengths[b] + 1
+            actual_end = mel_lengths[b]
             if actual_end < mel_input_tokens.shape[-1]:
                 mel_input_tokens[b, actual_end:] = self.stop_mel_token
         return mel_input_tokens
@@ -428,7 +428,7 @@ class UnifiedVoice(nn.Module):
         for b in range(len(text_lengths)):
             # Due to the convolutional nature of how these tokens are generated,
             # it would be best if the model predicts a token past the actual last token.
-            actual_end = text_lengths[b] + 1
+            actual_end = text_lengths[b]
             if actual_end < text_input_tokens.shape[-1]:
                 text_input_tokens[b, actual_end:] = self.stop_text_token
         return text_input_tokens
@@ -509,10 +509,11 @@ class UnifiedVoice(nn.Module):
             if raw_mels is not None:
                 raw_mels = raw_mels[:, :, :max_mel_len*4]
         # Set padding areas within MEL (currently it is coded with the MEL code for <zero>).
-        mel_codes_lengths = torch.div(wav_lengths, self.mel_length_compression, rounding_mode='trunc')
+        #mel_codes_lengths = torch.div(wav_lengths, self.mel_length_compression, rounding_mode='trunc')
+        mel_codes_lengths = torch.ceil(wav_lengths / self.mel_length_compression).long() + 1
         mel_codes = self.set_mel_padding(mel_codes, mel_codes_lengths)
 
-        text_inputs = self.set_text_padding(mel_codes, text_lengths)
+        text_inputs = self.set_text_padding(text_inputs, text_lengths)
 
         text_inputs = F.pad(text_inputs, (0,1), value=self.stop_text_token)
         mel_codes = F.pad(mel_codes, (0,1), value=self.stop_mel_token)

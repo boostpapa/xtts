@@ -230,7 +230,7 @@ class Trainer(object):
                 accelerator.wait_for_everyone()
 
                 if self.global_step % self.log_interval == 0:
-                    logging.warning(f"batch size: {input_data[3].shape}")
+                    #logging.warning(f"batch size: {input_data[3].shape}")
                     lr = self.optimizer.param_groups[0]["lr"]
                     losses = [total_losses, text_losses, mel_losses]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
