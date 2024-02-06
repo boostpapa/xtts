@@ -48,17 +48,15 @@ def get_cosine_schedule_with_warmup_lr(
     global num_warmup_step
     global total_training_steps
     global final_lr_ratio
-    if current_step < total_training_steps:
+    if current_step < num_warmup_step:
         return float(current_step) / float(max(1, num_warmup_step))
 
     progress = float(current_step - num_warmup_step) / float(
         max(1, total_training_steps - num_warmup_step)
     )
 
-    return max(
-        final_lr_ratio,
-        0.5 * (1.0 + math.cos(math.pi * progress)),
-    )
+    lr_ratio = 0.5 * (1.0 + math.cos(math.pi * progress))
+    return max(final_lr_ratio, lr_ratio)
 
 
 class Trainer(object):
@@ -100,10 +98,11 @@ class Trainer(object):
             self.model_dir.mkdir(exist_ok = True, parents=True)
         self.logger = get_logger(self.model_dir)
 
-        self.optimizer = AdamW(self.gpt.parameters(),lr=self.cfg['train']['lr'], betas=(0.9, 0.96), weight_decay=0.01)
+        self.optimizer = AdamW(self.gpt.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.96), weight_decay=0.01)
         global total_training_steps
-        total_training_steps = len(self.train_dataloader)*self.num_epochs/(self.batch_size*self.accum_grad)
-        print(f">> total training epoch: {self.num_epochs}, steps: {total_training_steps}")
+        total_batches = len(self.train_dataloader)
+        total_training_steps = total_batches*self.num_epochs/self.accum_grad
+        print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
@@ -231,6 +230,7 @@ class Trainer(object):
                 accelerator.wait_for_everyone()
 
                 if self.global_step % self.log_interval == 0:
+                    logging.warning(f"batch size: {input_data[3].shape}")
                     lr = self.optimizer.param_groups[0]["lr"]
                     losses = [total_losses, text_losses, mel_losses]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
@@ -253,7 +253,6 @@ class Trainer(object):
                     )
                 text_losses = mel_losses = total_losses = 0.
                 self.global_step += 1
-                self.scheduler.step()
             # one epoch training finish
             if accelerator.is_main_process:
                 self.logger.info(f"Evaluating Epoch: {epoch}")
