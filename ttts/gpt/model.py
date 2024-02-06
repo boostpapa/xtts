@@ -405,19 +405,33 @@ class UnifiedVoice(nn.Module):
         tar = F.pad(input, (0,1), value=stop_token)
         return inp, tar
 
-    def set_mel_padding(self, mel_input_tokens, wav_lengths):
+    def set_mel_padding(self, mel_input_tokens, mel_lengths):
         """
         Given mel tokens that are derived from a padded audio clip and the actual lengths of each batch element in
         that audio clip, reformats the tokens with STOP_MEL_TOKEN in place of the zero padding. This is required
         preformatting to create a working TTS model.
         """
-        # Set padding areas within MEL (currently it is coded with the MEL code for <zero>).
-        mel_lengths = torch.div(wav_lengths, self.mel_length_compression, rounding_mode='trunc')
         for b in range(len(mel_lengths)):
-            actual_end = mel_lengths[b] + 1  # Due to the convolutional nature of how these tokens are generated, it would be best if the model predicts a token past the actual last token.
+            # Due to the convolutional nature of how these tokens are generated,
+            # it would be best if the model predicts a token past the actual last token.
+            actual_end = mel_lengths[b] + 1
             if actual_end < mel_input_tokens.shape[-1]:
                 mel_input_tokens[b, actual_end:] = self.stop_mel_token
         return mel_input_tokens
+
+    def set_text_padding(self, text_input_tokens, text_lengths):
+        """
+        Given mel tokens that are derived from a padded audio clip and the actual lengths of each batch element in
+        that audio clip, reformats the tokens with STOP_MEL_TOKEN in place of the zero padding. This is required
+        preformatting to create a working TTS model.
+        """
+        for b in range(len(text_lengths)):
+            # Due to the convolutional nature of how these tokens are generated,
+            # it would be best if the model predicts a token past the actual last token.
+            actual_end = text_lengths[b] + 1
+            if actual_end < text_input_tokens.shape[-1]:
+                text_input_tokens[b, actual_end:] = self.stop_text_token
+        return text_input_tokens
 
     def get_logits(self, speech_conditioning_inputs, first_inputs, first_head, second_inputs=None, second_head=None, get_attns=False, return_latent=False):
         if second_inputs is not None:
@@ -461,7 +475,8 @@ class UnifiedVoice(nn.Module):
             conds = conds.mean(dim=1)
         return conds
 
-    def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths, types=None, text_first=True, raw_mels=None, return_attentions=False,
+    def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths,
+                types=None, text_first=True, raw_mels=None, return_attentions=False,
                 return_latent=False, clip_inputs=False):
         """
         Forward pass that uses both text and voice in either text conditioning mode or voice conditioning mode
@@ -493,7 +508,12 @@ class UnifiedVoice(nn.Module):
             mel_codes = mel_codes[:, :max_mel_len]
             if raw_mels is not None:
                 raw_mels = raw_mels[:, :, :max_mel_len*4]
-        mel_codes = self.set_mel_padding(mel_codes, wav_lengths)
+        # Set padding areas within MEL (currently it is coded with the MEL code for <zero>).
+        mel_codes_lengths = torch.div(wav_lengths, self.mel_length_compression, rounding_mode='trunc')
+        mel_codes = self.set_mel_padding(mel_codes, mel_codes_lengths)
+
+        text_inputs = self.set_text_padding(mel_codes, text_lengths)
+
         text_inputs = F.pad(text_inputs, (0,1), value=self.stop_text_token)
         mel_codes = F.pad(mel_codes, (0,1), value=self.stop_mel_token)
 
@@ -520,10 +540,17 @@ class UnifiedVoice(nn.Module):
             if return_latent:
                 return text_logits[:, :-2]  # Despite the name, these are not logits. Strip off the two tokens added by this forward pass.
 
+        # Set paddings to -1 to ignore them in loss
+        for idx, l in enumerate(text_lengths):
+            text_targets[idx, l + 1 :] = -1
+
+        for idx, l in enumerate(mel_codes_lengths):
+            mel_targets[idx, l + 1 :] = -1
+
         if return_attentions:
             return mel_logits
-        loss_text = F.cross_entropy(text_logits, text_targets.long())
-        loss_mel = F.cross_entropy(mel_logits, mel_targets.long())
+        loss_text = F.cross_entropy(text_logits, text_targets.long(), ignore_index=-1)
+        loss_mel = F.cross_entropy(mel_logits, mel_targets.long(), ignore_index=-1)
         return loss_text.mean(), loss_mel.mean(), mel_logits
 
     def inference_speech(self, speech_conditioning_latent, text_inputs, input_tokens=None, num_return_sequences=1,
