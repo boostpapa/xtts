@@ -1,6 +1,6 @@
 import copy
 from datetime import datetime
-import json
+import json, math
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, summarize, update_moving_average
@@ -37,11 +37,28 @@ def get_grad_norm(model):
     return total_norm
 
 
-def warmup(step):
-    if step < 500:
-        return float(step / 500)
-    else:
-        return 1
+num_warmup_step = 1000
+total_training_steps = 100000
+final_lr_ratio = 0.1
+
+
+def get_cosine_schedule_with_warmup_lr(
+    current_step: int,
+):
+    global num_warmup_step
+    global total_training_steps
+    global final_lr_ratio
+    if current_step < total_training_steps:
+        return float(current_step) / float(max(1, num_warmup_step))
+
+    progress = float(current_step - num_warmup_step) / float(
+        max(1, total_training_steps - num_warmup_step)
+    )
+
+    return max(
+        final_lr_ratio,
+        0.5 * (1.0 + math.cos(math.pi * progress)),
+    )
 
 
 class Trainer(object):
@@ -56,6 +73,8 @@ class Trainer(object):
         self.eval_interval = self.cfg.train['eval_interval']
         self.log_interval = self.cfg['train']['log_interval']
         self.num_epochs = self.cfg['train']['epochs']
+        self.batch_size = self.cfg['dataloader']['batch_size']
+        self.accum_grad = self.cfg['train']['accum_grad']
         self.use_fp16 = self.cfg['train']['fp16_run']
         precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
 
@@ -82,13 +101,16 @@ class Trainer(object):
         self.logger = get_logger(self.model_dir)
 
         self.optimizer = AdamW(self.gpt.parameters(),lr=self.cfg['train']['lr'], betas=(0.9, 0.96), weight_decay=0.01)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=warmup)
+        global total_training_steps
+        total_training_steps = len(self.train_dataloader)*self.num_epochs/(self.batch_size*self.accum_grad)
+        print(f">> total training epoch: {self.num_epochs}, steps: {total_training_steps}")
+
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
         self.dvae.eval()
 
         self.mel_loss_weight = self.cfg['train']['mel_weight']
         self.text_loss_weight = self.cfg['train']['text_weight']
-        self.accum_grad = self.cfg['train']['accum_grad']
         self.grad_clip = self.cfg['train']['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 50
@@ -220,7 +242,7 @@ class Trainer(object):
                     self.logger.info("Evaluating ...")
                     losses = self.eval()
                     self.logger.info([x.item() for x in losses])
-                    self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
+                    # self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
                     scalar_dict = {"loss": total_losses, "loss_text": text_losses,
                                    "loss_mel": mel_losses,
                                    "loss/grad": grad_norm}
@@ -231,13 +253,13 @@ class Trainer(object):
                     )
                 text_losses = mel_losses = total_losses = 0.
                 self.global_step += 1
+                self.scheduler.step()
             # one epoch training finish
             if accelerator.is_main_process:
                 self.logger.info(f"Evaluating Epoch: {epoch}")
                 losses = self.eval()
                 lr = self.optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.scheduler.step()
             self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"))
         accelerator.print('training complete')
 
