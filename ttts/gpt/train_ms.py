@@ -70,7 +70,6 @@ class Trainer(object):
 
         # Load DVAE
         self.dvae = DiscreteVAE(**self.cfg['vqvae'])
-        self.dvae.eval()
         dvae_checkpoint = torch.load(self.cfg.dvae_checkpoint, map_location=torch.device("cpu"))
         if 'model' in dvae_checkpoint:
             dvae_checkpoint = dvae_checkpoint['model']
@@ -85,6 +84,7 @@ class Trainer(object):
         self.optimizer = AdamW(self.gpt.parameters(),lr=self.cfg['train']['lr'], betas=(0.9, 0.96), weight_decay=0.01)
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=warmup)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
+        self.dvae.eval()
 
         self.mel_loss_weight = self.cfg['train']['mel_weight']
         self.text_loss_weight = self.cfg['train']['text_weight']
@@ -136,9 +136,7 @@ class Trainer(object):
         model = self.accelerator.unwrap_model(self.gpt)
         device = self.accelerator.device
         model.eval()
-        total_losses = 0
-        text_losses = 0
-        mel_losses = 0
+        text_losses = mel_losses = total_losses = 0.
         num_samples = 0
         with torch.no_grad():
             for batch_idx, batch in enumerate(self.eval_dataloader):
@@ -163,6 +161,9 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
+        if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
+            self.dvae = self.dvae.module
+
         if accelerator.is_main_process:
             writer = SummaryWriter(log_dir=self.model_dir)
             num_params = sum(p.numel() for p in self.gpt.parameters())
@@ -175,6 +176,7 @@ class Trainer(object):
             self.save_checkpoint(self.model_dir.joinpath(f"init.pth"))
 
         for epoch in range(0, self.num_epochs):
+            text_losses = mel_losses = total_losses = 0.
             for batch_idx, batch in enumerate(self.train_dataloader):
                 if batch is None:
                     continue
@@ -183,7 +185,8 @@ class Trainer(object):
                                 batch['padded_raw_mel'], batch['wav_lens']]
                 input_data = [d.to(device) for d in input_data]
                 # get vqvae codes from raw mel
-                input_data[3] = self.dvae.get_codebook_indices(input_data[3])
+                with torch.no_grad():
+                    input_data[3] = self.dvae.get_codebook_indices(input_data[3])
                 with accelerator.autocast():
                     loss_text, loss_mel, mel_logits = self.gpt(*input_data)
                     loss = loss_text * self.text_loss_weight + loss_mel * self.mel_loss_weight
@@ -217,6 +220,7 @@ class Trainer(object):
                     self.logger.info("Evaluating ...")
                     losses = self.eval()
                     self.logger.info([x.item() for x in losses])
+                    self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
                     scalar_dict = {"loss": total_losses, "loss_text": text_losses,
                                    "loss_mel": mel_losses,
                                    "loss/grad": grad_norm}
