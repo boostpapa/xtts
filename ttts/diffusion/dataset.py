@@ -59,6 +59,7 @@ class DiffusionDataset(torch.utils.data.Dataset):
         mel_raw = mel
         # print(f"mel_raw.shape: {mel_raw.shape}")
 
+        wav_length = mel.shape[1]*256
         split = random.randint(int(mel_raw.shape[1]//3), int(mel_raw.shape[1]//3*2))
         if random.random() > 0.5:
             mel_refer = mel_raw[:, split:]
@@ -70,10 +71,10 @@ class DiffusionDataset(torch.utils.data.Dataset):
         if mel_raw.shape[1] > 600:
             mel_raw = mel_raw[:, :600]
 
-        return text_tokens, mel_raw, mel_refer
+        return text_tokens, mel_raw, mel_refer, wav_length
 
     def __len__(self):
-        return len(self.audiopaths_and_text)
+        return len(self.datalist)
 
 
 class DiffusionCollater():
@@ -88,31 +89,36 @@ class DiffusionCollater():
         text_lens = [len(x[0]) for x in batch]
         max_text_len = max(text_lens)
 
-        mel_lens = [x[2].shape[1] for x in batch]
+        mel_lens = [x[1].shape[1] for x in batch]
         max_mel_len = max(mel_lens)
 
-        mel_refer_lens = [x[3].shape[1] for x in batch]
+        mel_refer_lens = [x[2].shape[1] for x in batch]
         max_mel_refer_len = max(mel_refer_lens)
 
+        wav_lens = [x[3] for x in batch]
+        max_wav_len = max(wav_lens)
+
         texts = []
-        mel = []
+        mels = []
         mel_refers = []
         # This is the sequential "background" tokens that are used as padding for text tokens, as specified in the DALLE paper.
         for sample in batch:
-            text_token, mel_code, mel, mel_refer = sample
+            text_token, mel, mel_refer, wav_len = sample
             texts.append(F.pad(text_token, (0, max_text_len-len(text_token)), value=0))
-            mel.append(F.pad(mel, (0, max_mel_len-mel.shape[1]), value=0))
+            mels.append(F.pad(mel, (0, max_mel_len-mel.shape[1]), value=0))
             mel_refers.append(F.pad(mel_refer, (0, max_mel_refer_len-mel_refer.shape[1]), value=0))
 
         padded_text = torch.stack(texts)
-        padded_mel = torch.stack(mel)
+        padded_mel = torch.stack(mels)
         padded_mel_refer = torch.stack(mel_refers)
         return {
             'padded_text': padded_text,
+            'text_lengths': LongTensor(text_lens),
             'padded_mel': padded_mel,
             'mel_lengths': LongTensor(mel_lens),
             'padded_mel_refer': padded_mel_refer,
-            'mel_refer_lengths': LongTensor(mel_refer_lens)
+            'mel_refer_lengths': LongTensor(mel_refer_lens),
+            'wav_lens': LongTensor(wav_lens)
         }
 
 
