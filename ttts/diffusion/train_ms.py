@@ -84,15 +84,10 @@ def warmup(step):
         return 1
 
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
 class Trainer(object):
     def __init__(self, args):
         # ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
         # self.accelerator = Accelerator(kwargs_handlers=[ddp_kwargs])
-        self.accelerator = Accelerator()
         self.cfg = OmegaConf.load(args.config)
         # self.cfg = json.load(open(cfg_path))
         trained_diffusion_steps = 1000
@@ -104,9 +99,9 @@ class Trainer(object):
         self.train_dataset = DiffusionDataset(self.cfg, self.cfg.dataset['training_files'])
         self.eval_dataset = DiffusionDataset(self.cfg, self.cfg.dataset['validation_files'])
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader,
-                                           collate_fn=DiffusionCollater(self.cfg))
+                                           collate_fn=DiffusionCollater())
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader,
-                                          collate_fn=DiffusionCollater(self.cfg))
+                                          collate_fn=DiffusionCollater())
 
         self.train_steps = self.cfg['train']['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
@@ -127,7 +122,7 @@ class Trainer(object):
 
         ## load gpt model ##
         self.gpt = UnifiedVoice(**self.cfg.gpt)
-        gpt_path = self.cfg.dataset['gpt_checkpoint']
+        gpt_path = self.cfg.gpt_checkpoint
         gpt_checkpoint = torch.load(gpt_path, map_location=torch.device("cpu"))
         gpt_checkpoint = gpt_checkpoint['model'] if 'model' in gpt_checkpoint else gpt_checkpoint
         self.gpt.load_state_dict(gpt_checkpoint, strict=False)
@@ -137,7 +132,7 @@ class Trainer(object):
 
         ## load gpt model ##
         self.dvae = DiscreteVAE(**self.cfg.vqvae)
-        dvae_path = self.cfg.dataset['dvae_checkpoint']
+        dvae_path = self.cfg.dvae_checkpoint
         dvae_checkpoint = torch.load(dvae_path, map_location=torch.device("cpu"))
         if 'model' in dvae_checkpoint:
             dvae_checkpoint = dvae_checkpoint['model']
@@ -145,6 +140,7 @@ class Trainer(object):
         self.dvae.eval()
         print(">> vqvae weights restored from:", dvae_path)
 
+        self.accelerator = Accelerator(mixed_precision=precision, split_batches=True)
         self.model_dir = Path(args.model)
         if self.accelerator.is_main_process:
             self.model_dir.mkdir(exist_ok=True, parents=True)
