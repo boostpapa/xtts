@@ -73,6 +73,8 @@ class Trainer(object):
         self.num_epochs = self.cfg['train']['epochs']
         self.batch_size = self.cfg['dataloader']['batch_size']
         self.accum_grad = self.cfg['train']['accum_grad']
+        self.lr = self.cfg['train']['lr']
+        self.weight_decay = self.cfg.train['weight_decay']
         self.use_fp16 = self.cfg['train']['fp16_run']
         precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
 
@@ -98,11 +100,15 @@ class Trainer(object):
             self.model_dir.mkdir(exist_ok = True, parents=True)
         self.logger = get_logger(self.model_dir)
 
-        self.optimizer = AdamW(self.gpt.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.96), weight_decay=0.01)
+        self.optimizer = AdamW(self.gpt.parameters(), lr=self.lr, betas=(0.9, 0.96), weight_decay=self.weight_decay)
         global total_training_steps
         total_batches = len(self.train_dataloader)
         total_training_steps = total_batches*self.num_epochs/self.accum_grad
         print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
+        global final_lr_ratio
+        if 'min_lr' in self.cfg['train']:
+            self.min_lr = self.cfg['train']['min_lr']
+            final_lr_ratio = self.min_lr / self.lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)

@@ -552,6 +552,8 @@ class UnifiedVoice(nn.Module):
             return mel_logits
         loss_text = F.cross_entropy(text_logits, text_targets.long(), ignore_index=-1)
         loss_mel = F.cross_entropy(mel_logits, mel_targets.long(), ignore_index=-1)
+        #loss_text = F.cross_entropy(text_logits, text_targets.long())
+        #loss_mel = F.cross_entropy(mel_logits, mel_targets.long())
         return loss_text.mean(), loss_mel.mean(), mel_logits
 
     def inference_speech(self, speech_conditioning_latent, text_inputs, input_tokens=None, num_return_sequences=1,
