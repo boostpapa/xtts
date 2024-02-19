@@ -8,6 +8,7 @@ import json
 import torch
 import os
 
+
 def load_model(model_name, model_path, config_path, device):
     config_path = os.path.expanduser(config_path)
     model_path = os.path.expanduser(model_path)
@@ -15,17 +16,21 @@ def load_model(model_name, model_path, config_path, device):
         config = json.load(open(config_path))
     else:
         config = OmegaConf.load(config_path)
-    if model_name=='vqvae':
+    if model_name == 'vqvae':
         model = DiscreteVAE(**config['vqvae'])
-        sd = torch.load(model_path, map_location=device)['model']
-        model.load_state_dict(sd, strict=True)
+        dvae = torch.load(model_path, map_location=device)
+        if 'model' in dvae:
+            dvae = dvae['model']
+        model.load_state_dict(dvae, strict=True)
         model = model.to(device)
-    elif model_name=='gpt':
+        print(">> vqvae weights restored from:", model_path)
+    elif model_name == 'gpt':
         model = UnifiedVoice(**config['gpt'])
         gpt = torch.load(model_path, map_location=device)['model']
         model.load_state_dict(gpt, strict=True)
         model = model.to(device)
-    elif model_name=='diffusion':
+        print(">> GPT weights restored from:", model_path)
+    elif model_name == 'diffusion':
         # model = DiffusionTts(**config['diffusion'])
         model = AA_diffusion(config)
         diffusion = torch.load(model_path, map_location=device)['model']
@@ -37,6 +42,4 @@ def load_model(model_name, model_path, config_path, device):
         model.load_state_dict(classifier, strict=True)
         model = model.to(device)
     # elif model_name=='clvp':
-
-    
     return model.eval()
