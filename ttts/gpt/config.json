@@ -34,7 +34,8 @@
     "number_text_tokens":256,
     "number_mel_codes":8194,
     "start_text_token":255,
-    "train_solo_embeddings":false
+    "train_solo_embeddings":false,
+    "use_perceiver":true
   },
   "vqvae":{
     "channels": 100,

@@ -39,6 +39,7 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         self.transformer = gpt
         self.text_pos_embedding = text_pos_emb
         self.embeddings = embeddings
+        self.final_norm = norm
         self.lm_head = nn.Sequential(norm, linear)
         self.kv_cache = kv_cache
         
@@ -331,8 +332,9 @@ class UnifiedVoice(nn.Module):
         self.model_dim = model_dim
         self.max_conditioning_inputs = max_conditioning_inputs
         self.mel_length_compression = mel_length_compression
-        if use_perceiver==True:
-            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=100)
+        self.cond_num = 32
+        if use_perceiver:
+            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=512, num_latents=self.cond_num)
         else:
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
         self.use_perceiver = use_perceiver
@@ -443,11 +445,16 @@ class UnifiedVoice(nn.Module):
         if get_attns:
             return gpt_out.attentions
 
-        enc = gpt_out.last_hidden_state[:, 1:]  # The first logit is tied to the speech_conditioning_input
+        offset = speech_conditioning_inputs.shape[1]
+        enc = gpt_out.last_hidden_state[:, offset:]
+        #enc = gpt_out.last_hidden_state[:, self.cond_num:] if self.use_perceiver else gpt_out.last_hidden_state[:, 1:]  # The first logit is tied to the speech_conditioning_input
         enc = self.final_norm(enc)
 
         if return_latent:
-            return enc[:, speech_conditioning_inputs.shape[1]:speech_conditioning_inputs.shape[1]+first_inputs.shape[1]], enc[:, -second_inputs.shape[1]:]
+            if self.use_perceiver:
+                return enc[:, :first_inputs.shape[1]], enc[:, -second_inputs.shape[1]:]
+            else:
+                return enc[:, speech_conditioning_inputs.shape[1]:speech_conditioning_inputs.shape[1]+first_inputs.shape[1]], enc[:, -second_inputs.shape[1]:]
 
         first_logits = enc[:, :first_inputs.shape[1]]
         first_logits = first_head(first_logits)
@@ -463,11 +470,11 @@ class UnifiedVoice(nn.Module):
     def get_conditioning(self, speech_conditioning_input):
         if self.use_perceiver is not True:
             speech_conditioning_input = speech_conditioning_input.unsqueeze(1) if len(
-            speech_conditioning_input.shape) == 3 else speech_conditioning_input
+                speech_conditioning_input.shape) == 3 else speech_conditioning_input
         conds = []
         for j in range(speech_conditioning_input.shape[1]):
             if self.use_perceiver == True:
-                conds = self.perceiver_encoder(speech_conditioning_input.transpose(1,2))
+                conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))
             else:
                 conds.append(self.conditioning_encoder(speech_conditioning_input[:, j]))
         if self.use_perceiver is not True:
@@ -571,7 +578,10 @@ class UnifiedVoice(nn.Module):
         emb = torch.cat([conds, text_emb], dim=1)
         self.inference_model.store_mel_emb(emb)
 
-        fake_inputs = torch.full((emb.shape[0], conds.shape[1] + emb.shape[1],), fill_value=1, dtype=torch.long,
+        if self.use_perceiver:
+            fake_inputs = torch.full((emb.shape[0], emb.shape[1]+1,), fill_value=1, dtype=torch.long, device=text_inputs.device)
+        else:
+            fake_inputs = torch.full((emb.shape[0], conds.shape[1] + emb.shape[1],), fill_value=1, dtype=torch.long,
                                  device=text_inputs.device)
         fake_inputs[:, -1] = self.start_mel_token
         trunc_index = fake_inputs.shape[1]

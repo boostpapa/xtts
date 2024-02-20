@@ -69,8 +69,8 @@ class GptTTSDataset(torch.utils.data.Dataset):
         except:
             return None
 
-        if text.shape[0] > 300 or raw_mel.shape[1] > 2000:
-            print(f"Warning: {key} text len {text.shape[0]} exceed 300 , raw mel len {raw_mel.shape[1]} exceed 2000.")
+        if text.shape[0] > 300 or raw_mel.shape[1] > 2400:
+            print(f"Warning: {key} text len {text.shape[0]} exceed 300 or raw mel len {raw_mel.shape[1]} exceed 2400.")
             return None
 
         return text, raw_mel, cond_mel, wav_length
