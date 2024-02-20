@@ -334,7 +334,7 @@ class UnifiedVoice(nn.Module):
         self.mel_length_compression = mel_length_compression
         self.cond_num = 32
         if use_perceiver:
-            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=512, num_latents=self.cond_num)
+            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=100, num_latents=self.cond_num)
         else:
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
         self.use_perceiver = use_perceiver
@@ -445,9 +445,7 @@ class UnifiedVoice(nn.Module):
         if get_attns:
             return gpt_out.attentions
 
-        offset = speech_conditioning_inputs.shape[1]
-        enc = gpt_out.last_hidden_state[:, offset:]
-        #enc = gpt_out.last_hidden_state[:, self.cond_num:] if self.use_perceiver else gpt_out.last_hidden_state[:, 1:]  # The first logit is tied to the speech_conditioning_input
+        enc = gpt_out.last_hidden_state[:, self.cond_num:] if self.use_perceiver else gpt_out.last_hidden_state[:, 1:]  # The first logit is tied to the speech_conditioning_input
         enc = self.final_norm(enc)
 
         if return_latent:
