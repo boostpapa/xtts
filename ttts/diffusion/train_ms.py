@@ -4,7 +4,7 @@ from ttts.diffusion.aa_model import AA_diffusion, denormalize_tacotron_mel, norm
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.utils.diffusion import SpacedDiffusion, space_timesteps, get_named_beta_schedule
 import torch
-import copy
+import copy, math
 from datetime import datetime
 import json
 from vocos import Vocos
@@ -77,11 +77,26 @@ def get_grad_norm(model):
     return total_norm
 
 
-def warmup(step):
-    if step < 1000:
-        return float(step/1000)
-    else:
-        return 1
+num_warmup_step = 1000
+total_training_steps = 100000
+final_lr_ratio = 0.1
+
+
+def get_cosine_schedule_with_warmup_lr(
+    current_step: int,
+):
+    global num_warmup_step
+    global total_training_steps
+    global final_lr_ratio
+    if current_step < num_warmup_step:
+        return float(current_step) / float(max(1, num_warmup_step))
+
+    progress = float(current_step - num_warmup_step) / float(
+        max(1, total_training_steps - num_warmup_step)
+    )
+
+    lr_ratio = 0.5 * (1.0 + math.cos(math.pi * progress))
+    return max(final_lr_ratio, lr_ratio)
 
 
 class Trainer(object):
@@ -157,7 +172,16 @@ class Trainer(object):
         self.logger = get_logger(self.model_dir)
 
         self.optimizer = AdamW(self.diffusion.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=warmup)
+        global total_training_steps
+        total_batches = len(self.train_dataloader)
+        total_training_steps = total_batches*self.num_epochs/self.accum_grad
+        print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
+        global final_lr_ratio
+        if 'min_lr' in self.cfg['train']:
+            self.min_lr = self.cfg['train']['min_lr']
+            final_lr_ratio = self.min_lr / self.lr
+
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae \
             = self.accelerator.prepare(self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae)
         self.grad_clip = self.cfg['train']['grad_clip']
