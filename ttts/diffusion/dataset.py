@@ -65,8 +65,8 @@ class DiffusionDataset(torch.utils.data.Dataset):
             mel_refer = mel_raw[:, split:]
         else:
             mel_refer = mel_raw[:, :split]
-        if mel_refer.shape[1] > 300:
-            mel_refer = mel_refer[:, :300]
+        if mel_refer.shape[1] > 600:
+            mel_refer = mel_refer[:, :600]
 
         if mel_raw.shape[1] > 600:
             mel_raw = mel_raw[:, :600]
