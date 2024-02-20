@@ -256,7 +256,7 @@ class Trainer(object):
                 total_losses += loss * num_sample
 
         model.train()
-        #total_losses /= num_samples
+        total_losses /= num_samples
         return [total_losses]
 
     def train(self):
