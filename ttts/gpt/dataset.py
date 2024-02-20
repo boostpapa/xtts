@@ -8,6 +8,7 @@ import torch.utils.data
 from torch import LongTensor
 from tqdm import tqdm
 import torchaudio
+from collections import defaultdict
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
@@ -18,13 +19,31 @@ class GptTTSDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile):
         self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
         self.datalist = []
+        self.spk2wav = defaultdict(list)
         with open(datafile, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.datalist.append(line.strip())
+                # key, wav_path, spkid, language, raw_text, cleand_text
+                strs = line.strip().split("|")
+                self.spk2wav[strs[2]].append(strs[strs[1]])
 
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
         self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
+
+    def load_wav(self, wav_path):
+        wave, sample_rate = torchaudio.load(wav_path)
+        # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
+        if wave.size(0) > 1:  # mix to mono
+            wave = wave[0].unsqueeze(0)
+        if sample_rate != self.sample_rate:
+            try:
+                transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
+                wave = transform(wave)
+            except Exception as e:
+                print(f"Warning: {wav_path}, wave shape: {wave.shape}, sample_rate: {sample_rate}")
+                return None
+        return wave
 
     def __getitem__(self, index):
         try:
@@ -44,28 +63,27 @@ class GptTTSDataset(torch.utils.data.Dataset):
 
             key = strs[0]
             wav_path = strs[1]
-            wave, sample_rate = torchaudio.load(wav_path)
-            # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
-            if wave.size(0) > 1:  # mix to mono
-                wave = wave[0].unsqueeze(0)
-            if sample_rate != self.sample_rate:
-                try:
-                    transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
-                    wave = transform(wave)
-                except Exception as e:
-                    print(f"Warning: {wav_path}, wave shape: {wave.shape}, sample_rate: {sample_rate}")
-                    return None
+            spkid = strs[2]
 
+            wave = self.load_wav(wav_path)
+            if wave is None:
+                return None
             mel = self.mel_extractor(wave)[0]
+            wav_length = mel.shape[1] * 256
             raw_mel = mel
             #print(f"raw_mel.shape: {raw_mel.shape}")
 
-            wav_length = mel.shape[1]*256
-            split = random.randint(int(mel.shape[1]//3), int(mel.shape[1]//3*2))
-            if random.random() > 0.5:
-                cond_mel = mel[:, :split]
+            cond_wav_path = random.choice(self.spk2wav[spkid])
+            cond_wave = self.load_wav(cond_wav_path)
+            if cond_wave is None:
+                return None
+            cond_mel = self.mel_extractor(cond_wave)[0]
+
+            split = random.randint(int(cond_mel.shape[1]//3), int(cond_mel.shape[1]//3*2))
+            if split > cond_mel.shape[1]/2:
+                cond_mel = cond_mel[:, :split]
             else:
-                cond_mel = mel[:, split:]
+                cond_mel = cond_mel[:, split:]
         except:
             return None
 

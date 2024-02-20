@@ -466,18 +466,22 @@ class UnifiedVoice(nn.Module):
             return first_logits
 
     def get_conditioning(self, speech_conditioning_input):
-        if self.use_perceiver is not True:
-            speech_conditioning_input = speech_conditioning_input.unsqueeze(1) if len(
-                speech_conditioning_input.shape) == 3 else speech_conditioning_input
-        conds = []
-        for j in range(speech_conditioning_input.shape[1]):
-            if self.use_perceiver == True:
-                conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))
-            else:
+        if not self.use_perceiver:
+            speech_conditioning_input = (
+                speech_conditioning_input.unsqueeze(1)
+                if len(speech_conditioning_input.shape) == 3
+                else speech_conditioning_input
+            )
+            conds = []
+            for j in range(speech_conditioning_input.shape[1]):
                 conds.append(self.conditioning_encoder(speech_conditioning_input[:, j]))
-        if self.use_perceiver is not True:
             conds = torch.stack(conds, dim=1)
             conds = conds.mean(dim=1)
+        else:
+            #if speech_conditioning_input.ndim == 4:
+            #    speech_conditioning_input = speech_conditioning_input.squeeze(1)
+            #speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
+            conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, d, 32)
         return conds
 
     def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths,
@@ -545,20 +549,21 @@ class UnifiedVoice(nn.Module):
             mel_logits, text_logits = self.get_logits(conds, mel_emb, self.mel_head, text_emb, self.text_head, get_attns=return_attentions, return_latent=return_latent)
             if return_latent:
                 return text_logits[:, :-2]  # Despite the name, these are not logits. Strip off the two tokens added by this forward pass.
-
+        '''
         # Set paddings to -1 to ignore them in loss
         for idx, l in enumerate(text_lengths):
             text_targets[idx, l + 1 :] = -1
 
         for idx, l in enumerate(mel_codes_lengths):
             mel_targets[idx, l + 1 :] = -1
+        '''
 
         if return_attentions:
             return mel_logits
-        loss_text = F.cross_entropy(text_logits, text_targets.long(), ignore_index=-1)
-        loss_mel = F.cross_entropy(mel_logits, mel_targets.long(), ignore_index=-1)
-        #loss_text = F.cross_entropy(text_logits, text_targets.long())
-        #loss_mel = F.cross_entropy(mel_logits, mel_targets.long())
+        #loss_text = F.cross_entropy(text_logits, text_targets.long(), ignore_index=-1)
+        #loss_mel = F.cross_entropy(mel_logits, mel_targets.long(), ignore_index=-1)
+        loss_text = F.cross_entropy(text_logits, text_targets.long())
+        loss_mel = F.cross_entropy(mel_logits, mel_targets.long())
         return loss_text.mean(), loss_mel.mean(), mel_logits
 
     def inference_speech(self, speech_conditioning_latent, text_inputs, input_tokens=None, num_return_sequences=1,
