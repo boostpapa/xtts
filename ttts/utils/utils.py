@@ -4,6 +4,7 @@ import functools
 import math
 from pathlib import Path
 import re
+import random
 
 import torch
 import torch.nn as nn
@@ -28,12 +29,54 @@ def get_logger(model_dir, filename="train.log"):
     return logger
 
 
+def load_audio(audiopath, sampling_rate):
+    audio, sr = torchaudio.load(audiopath)
+    # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
+
+    if audio.size(0) > 1:  # mix to mono
+        audio = audio[0].unsqueeze(0)
+
+    if sr != sampling_rate:
+        try:
+            audio = torchaudio.functional.resample(audio, sr, sampling_rate)
+        except Exception as e:
+            print(f"Warning: {audiopath}, wave shape: {audio.shape}, sample_rate: {sr}")
+            return None
+    # clip audio invalid values
+    audio.clip_(-1, 1)
+    return audio
+
+
+def get_prompt_slice(audio, max_audio_length=20, min_audio_length=3, sample_rate=24000, is_eval=False):
+    max_sample_length = max_audio_length * sample_rate
+    min_sample_length = min_audio_length * sample_rate
+    rel_clip = audio
+    # if eval uses a middle size sample when it is possible to be more reproducible
+    if is_eval:
+        sample_length = int((min_sample_length + max_sample_length) / 2)
+    else:
+        sample_length = random.randint(min_sample_length, max_sample_length)
+    gap = rel_clip.shape[-1] - sample_length
+    if gap < 0 and is_eval:
+        sample_length = rel_clip.shape[-1]
+    elif gap < 0:
+        sample_length = rel_clip.shape[-1] // 2
+    gap = rel_clip.shape[-1] - sample_length
+
+    # if eval start always from the position 0 to be more reproducible
+    if is_eval:
+        rand_start = 0
+    else:
+        rand_start = random.randint(0, gap)
+
+    rand_end = rand_start + sample_length
+    rel_clip = rel_clip[:, rand_start:rand_end]
+    return rel_clip
+
 class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super(AttrDict, self).__init__(*args, **kwargs)
         self.__dict__ = self
-
-
 def get_paths_with_cache(search_path, cache_path=None):
     out_paths=None
     if cache_path!=None and os.path.exists(cache_path):

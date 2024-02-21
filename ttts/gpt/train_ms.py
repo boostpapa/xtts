@@ -63,8 +63,8 @@ class Trainer(object):
     def __init__(self, args):
         json_config = json.load(open(args.config))
         self.cfg = AttrDict(json_config)
-        self.train_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['training_files'])
-        self.eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'])
+        self.train_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['training_files'], is_eval=False)
+        self.eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
         self.train_steps = self.cfg.train['train_steps']

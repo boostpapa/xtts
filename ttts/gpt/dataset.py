@@ -12,11 +12,11 @@ from collections import defaultdict
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
-from ttts.utils.utils import AttrDict, get_logger
+from ttts.utils.utils import AttrDict, load_audio, get_prompt_slice, get_logger
 
 
 class GptTTSDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg, datafile):
+    def __init__(self, cfg, datafile, is_eval=False):
         self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
         self.datalist = []
         self.spk2wav = defaultdict(list)
@@ -30,20 +30,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
         self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
-
-    def load_wav(self, wav_path):
-        wave, sample_rate = torchaudio.load(wav_path)
-        # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
-        if wave.size(0) > 1:  # mix to mono
-            wave = wave[0].unsqueeze(0)
-        if sample_rate != self.sample_rate:
-            try:
-                transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
-                wave = transform(wave)
-            except Exception as e:
-                print(f"Warning: {wav_path}, wave shape: {wave.shape}, sample_rate: {sample_rate}")
-                return None
-        return wave
+        self.is_eval = is_eval
 
     def __getitem__(self, index):
         try:
@@ -65,7 +52,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             wav_path = strs[1]
             spkid = strs[2]
 
-            wave = self.load_wav(wav_path)
+            wave = load_audio(wav_path, self.sample_rate)
             if wave is None:
                 return None
             mel = self.mel_extractor(wave)[0]
@@ -74,16 +61,11 @@ class GptTTSDataset(torch.utils.data.Dataset):
             #print(f"raw_mel.shape: {raw_mel.shape}")
 
             cond_wav_path = random.choice(self.spk2wav[spkid])
-            cond_wave = self.load_wav(cond_wav_path)
+            cond_wave = load_audio(cond_wav_path, self.sample_rate)
             if cond_wave is None:
                 return None
-            cond_mel = self.mel_extractor(cond_wave)[0]
-
-            split = random.randint(int(cond_mel.shape[1]//3), int(cond_mel.shape[1]//3*2))
-            if random.random() > 0.5:
-                cond_mel = cond_mel[:, :split]
-            else:
-                cond_mel = cond_mel[:, split:]
+            cond_wave_clip = get_prompt_slice(cond_wave, 15, 3, self.sample_rate, self.is_eval)
+            cond_mel = self.mel_extractor(cond_wave_clip)[0]
         except:
             return None
 
