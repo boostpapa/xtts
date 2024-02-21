@@ -25,7 +25,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
                 self.datalist.append(line.strip())
                 # key, wav_path, spkid, language, raw_text, cleand_text
                 strs = line.strip().split("|")
-                self.spk2wav[strs[2]].append(strs[strs[1]])
+                self.spk2wav[strs[2]].append(strs[1])
 
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
@@ -80,7 +80,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             cond_mel = self.mel_extractor(cond_wave)[0]
 
             split = random.randint(int(cond_mel.shape[1]//3), int(cond_mel.shape[1]//3*2))
-            if split > cond_mel.shape[1]/2:
+            if random.random() > 0.5:
                 cond_mel = cond_mel[:, :split]
             else:
                 cond_mel = cond_mel[:, split:]

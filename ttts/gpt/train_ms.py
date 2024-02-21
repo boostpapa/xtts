@@ -69,18 +69,18 @@ class Trainer(object):
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
-        self.log_interval = self.cfg['train']['log_interval']
-        self.num_epochs = self.cfg['train']['epochs']
-        self.batch_size = self.cfg['dataloader']['batch_size']
-        self.accum_grad = self.cfg['train']['accum_grad']
-        self.lr = self.cfg['train']['lr']
+        self.log_interval = self.cfg.train['log_interval']
+        self.num_epochs = self.cfg.train['epochs']
+        self.batch_size = self.cfg.dataloader['batch_size']
+        self.accum_grad = self.cfg.train['accum_grad']
+        self.lr = self.cfg.train['lr']
         self.weight_decay = self.cfg.train['weight_decay']
-        self.use_fp16 = self.cfg['train']['fp16_run']
+        self.use_fp16 = self.cfg.train['fp16_run']
         precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
 
         self.gpt = UnifiedVoice(**self.cfg.gpt)
-        if 'pretrain_model' in self.cfg['train']:
-            model_pth = self.cfg['train']['pretrain_model']
+        if 'pretrain_model' in self.cfg.train:
+            model_pth = self.cfg.train['pretrain_model']
             logging.warning("loading pretrain model: {}".format(model_pth))
             gpt_checkpoint = torch.load(model_pth, map_location=torch.device("cpu"))
             gpt_checkpoint = gpt_checkpoint['model'] if 'model' in gpt_checkpoint else gpt_checkpoint
@@ -106,17 +106,17 @@ class Trainer(object):
         total_training_steps = total_batches*self.num_epochs/self.accum_grad
         print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
         global final_lr_ratio
-        if 'min_lr' in self.cfg['train']:
-            self.min_lr = self.cfg['train']['min_lr']
+        if 'min_lr' in self.cfg.train:
+            self.min_lr = self.cfg.train['min_lr']
             final_lr_ratio = self.min_lr / self.lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
         self.dvae.eval()
 
-        self.mel_loss_weight = self.cfg['train']['mel_weight']
-        self.text_loss_weight = self.cfg['train']['text_weight']
-        self.grad_clip = self.cfg['train']['grad_clip']
+        self.mel_loss_weight = self.cfg.train['mel_weight']
+        self.text_loss_weight = self.cfg.train['text_weight']
+        self.grad_clip = self.cfg.train['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 50
         self.global_step = 0
@@ -192,6 +192,7 @@ class Trainer(object):
             self.dvae = self.dvae.module
 
         if accelerator.is_main_process:
+            self.logger.info(self.cfg)
             writer = SummaryWriter(log_dir=self.model_dir)
             num_params = sum(p.numel() for p in self.gpt.parameters())
             print('the number of gpt model parameters: {:,d}'.format(num_params))
