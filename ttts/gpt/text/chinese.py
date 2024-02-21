@@ -7,7 +7,7 @@ from pypinyin import lazy_pinyin, Style
 from ttts.gpt.text.symbols import punctuation
 from ttts.gpt.text.tone_sandhi import ToneSandhi
 #from tn.chinese.normalizer import Normalizer
-from .zh_normalization.text_normlization import TextNormalizer
+from ttts.gpt.text.zh_normalization.text_normlization import TextNormalizer
 
 current_file_path = os.path.dirname(__file__)
 pinyin_to_symbol_map = {

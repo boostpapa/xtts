@@ -123,6 +123,7 @@ class Trainer(object):
         self.log_interval = self.cfg['train']['log_interval']
         self.num_epochs = self.cfg['train']['epochs']
         self.accum_grad = self.cfg['train']['accum_grad']
+        self.lr = self.cfg['train']['lr']
         self.use_fp16 = self.cfg['train']['fp16_run']
         precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
 
@@ -177,8 +178,10 @@ class Trainer(object):
         total_training_steps = total_batches*self.num_epochs/self.accum_grad
         print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
         global final_lr_ratio
+        global num_warmup_step
         if 'min_lr' in self.cfg['train']:
             self.min_lr = self.cfg['train']['min_lr']
+            num_warmup_step = self.cfg['train']['warmup_steps']
             final_lr_ratio = self.min_lr / self.lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
