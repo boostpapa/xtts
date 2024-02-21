@@ -6,8 +6,8 @@ from g2p_en import G2p
 from ttts.gpt.text import symbols
 from ttts.gpt.text.symbols import punctuation
 
-from nemo_text_processing.text_normalization.normalize import Normalizer
-normalizer = Normalizer(input_case='cased', lang='en')
+#from nemo_text_processing.text_normalization.normalize import Normalizer
+#normalizer = Normalizer(input_case='cased', lang='en')
 
 current_file_path = os.path.dirname(__file__)
 CMU_DICT_PATH = os.path.join(current_file_path, "cmudict.rep")

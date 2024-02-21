@@ -192,6 +192,7 @@ class Trainer(object):
             self.dvae = self.dvae.module
 
         if accelerator.is_main_process:
+            self.logger.info(self.cfg)
             writer = SummaryWriter(log_dir=self.model_dir)
             num_params = sum(p.numel() for p in self.gpt.parameters())
             print('the number of gpt model parameters: {:,d}'.format(num_params))
