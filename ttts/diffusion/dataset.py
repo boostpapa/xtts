@@ -10,12 +10,13 @@ import torchaudio
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
+from ttts.utils.utils import load_audio
 import json
 import os
 
 
 class DiffusionDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg, datafile):
+    def __init__(self, cfg, datafile, is_eval=False):
         self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
         self.datalist = []
         with open(datafile, 'r', encoding='utf8') as fin:
@@ -25,6 +26,7 @@ class DiffusionDataset(torch.utils.data.Dataset):
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
         self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
+        self.is_eval = is_eval
 
     def __getitem__(self, index):
         # Fetch text and add start/stop tokens.
@@ -43,33 +45,24 @@ class DiffusionDataset(torch.utils.data.Dataset):
 
         key = strs[0]
         wav_path = strs[1]
-        wave, sample_rate = torchaudio.load(wav_path)
-        # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
-        if wave.size(0) > 1:  # mix to mono
-            wave = wave[0].unsqueeze(0)
-        if sample_rate != self.sample_rate:
-            try:
-                transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
-                wave = transform(wave)
-            except Exception as e:
-                print(f"Warning: {wav_path}, wave shape: {wave.shape}, sample_rate: {sample_rate}")
-                return None
+        wav = load_audio(wav_path, self.sample_rate)
+        if wav is None:
+            return None
 
-        mel = self.mel_extractor(wave)[0]
-        mel_raw = mel
+        mel_raw = self.mel_extractor(wav)[0]
         # print(f"mel_raw.shape: {mel_raw.shape}")
 
-        wav_length = mel.shape[1]*256
         split = random.randint(int(mel_raw.shape[1]//3), int(mel_raw.shape[1]//3*2))
         if random.random() > 0.5:
             mel_refer = mel_raw[:, split:]
         else:
             mel_refer = mel_raw[:, :split]
-        if mel_refer.shape[1] > 600:
-            mel_refer = mel_refer[:, :600]
+        if mel_refer.shape[1] > 200:
+            mel_refer = mel_refer[:, :200]
 
-        if mel_raw.shape[1] > 600:
-            mel_raw = mel_raw[:, :600]
+        if mel_raw.shape[1] > 400:
+            mel_raw = mel_raw[:, :400]
+        wav_length = mel_raw.shape[1] * 256
 
         return text_tokens, mel_raw, mel_refer, wav_length
 
