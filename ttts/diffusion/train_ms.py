@@ -153,7 +153,7 @@ class Trainer(object):
         print(">> GPT weights restored from:", gpt_path)
         self.mel_length_compression = self.gpt.mel_length_compression
 
-        ## load gpt model ##
+        ## load vqvae model ##
         self.dvae = DiscreteVAE(**self.cfg.vqvae)
         dvae_path = self.cfg.dvae_checkpoint
         dvae_checkpoint = torch.load(dvae_path, map_location=torch.device("cpu"))
@@ -233,10 +233,11 @@ class Trainer(object):
         num_samples = 0
         with torch.no_grad():
             for batch_idx, data in enumerate(self.eval_dataloader):
-                input_data = [data['padded_mel_refer'], data['padded_text'], data['text_lengths'],
-                                data['padded_mel'], data['wav_lens']]
-                input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                latent = self.gpt(*input_data, return_latent=True, clip_inputs=False).transpose(1, 2)
+                padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
+                latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
+                                  data['text_lengths'], padded_mel_code,
+                                  torch.tensor([padded_mel_code.shape[-1] * self.mel_length_compression], device=device),
+                                  return_latent=True, clip_inputs=False).transpose(1, 2)
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
                 x_start = normalize_tacotron_mel(data['padded_mel'].to(device))
                 aligned_conditioning = latent
@@ -251,7 +252,7 @@ class Trainer(object):
                         "refer": conditioning_latent
                     },
                 )["loss"].mean()
-                num_sample = input_data[3].shape[0]
+                num_sample = padded_mel_code.shape[0]
                 num_samples += num_sample
                 total_losses += loss * num_sample
 
@@ -290,10 +291,11 @@ class Trainer(object):
                     continue
 
                 with torch.no_grad():
-                    input_data = [data['padded_mel_refer'], data['padded_text'], data['text_lengths'],
-                                    data['padded_mel'], data['wav_lens']]
-                    input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                    latent = self.gpt(*input_data, return_latent=True, clip_inputs=False).transpose(1, 2)
+                    padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
+                    latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
+                                      data['text_lengths'], padded_mel_code,
+                                      torch.tensor([padded_mel_code.shape[-1] * self.mel_length_compression], device=device),
+                                      return_latent=True, clip_inputs=False).transpose(1, 2)
 
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
                 x_start = normalize_tacotron_mel(data['padded_mel'].to(device))
