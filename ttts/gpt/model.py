@@ -482,7 +482,7 @@ class UnifiedVoice(nn.Module):
         Forward pass that uses both text and voice in either text conditioning mode or voice conditioning mode
         (actuated by `text_first`).
 
-        speech_conditioning_input: MEL float tensor, (b,1024)
+        speech_conditioning_latent: MEL float tensor, (b, d, s)
         text_inputs: long tensor, (b,t)
         text_lengths: long tensor, (b,)
         mel_inputs:  long tensor, (b,m)
