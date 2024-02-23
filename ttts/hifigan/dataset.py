@@ -115,10 +115,12 @@ class HiFiGANCollater():
         padded_wav_refer = torch.stack(wav_refers)
         return {
             'padded_text': padded_text,
+            'text_lengths': LongTensor(text_lens),
             'padded_mel': padded_mel,
             'padded_wav': padded_wav,
             'padded_mel_refer': padded_mel_refer,
             'padded_wav_refer': padded_wav_refer,
+            'wav_lens': LongTensor(wav_lens)
         }
 
 

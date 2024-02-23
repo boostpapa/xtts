@@ -161,8 +161,8 @@ class Trainer(object):
             for batch_idx, data in enumerate(self.eval_dataloader):
                 padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                 latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
-                                  torch.tensor([data['padded_text'].shape[-1]], device=device), padded_mel_code,
-                                  torch.tensor([padded_mel_code.shape[-1] * self.mel_length_compression], device=device),
+                                  data['text_lengths'], padded_mel_code,
+                                  data['wav_lens'],
                                   return_latent=True, clip_inputs=False).transpose(1, 2)
 
                 x = latent
@@ -229,9 +229,9 @@ class Trainer(object):
                 with torch.no_grad():
                     padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                     latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
-                        torch.tensor([data['padded_text'].shape[-1]], device=device), padded_mel_code,
-                        torch.tensor([padded_mel_code.shape[-1]*self.mel_length_compression], device=device),
-                        return_latent=True, clip_inputs=False).transpose(1, 2)
+                                      data['text_lengths'], padded_mel_code,
+                                      data['wav_lens'],
+                                      return_latent=True, clip_inputs=False).transpose(1, 2)
 
                 x = latent
                 y = data['padded_wav']
