@@ -118,13 +118,13 @@ class Trainer(object):
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader,
                                           collate_fn=DiffusionCollater())
 
-        self.train_steps = self.cfg['train']['train_steps']
+        self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
-        self.log_interval = self.cfg['train']['log_interval']
-        self.num_epochs = self.cfg['train']['epochs']
-        self.accum_grad = self.cfg['train']['accum_grad']
-        self.lr = self.cfg['train']['lr']
-        self.use_fp16 = self.cfg['train']['fp16_run']
+        self.log_interval = self.cfg.train['log_interval']
+        self.num_epochs = self.cfg.train['epochs']
+        self.accum_grad = self.cfg.train['accum_grad']
+        self.lr = self.cfg.train['lr']
+        self.use_fp16 = self.cfg.train['fp16_run']
         precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
 
         self.diffusion = AA_diffusion(self.cfg)
@@ -172,7 +172,7 @@ class Trainer(object):
             self.model_dir.mkdir(exist_ok=True, parents=True)
         self.logger = get_logger(self.model_dir)
 
-        self.optimizer = AdamW(self.diffusion.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
+        self.optimizer = AdamW(self.diffusion.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0.01)
         global total_training_steps
         total_batches = len(self.train_dataloader)
         total_training_steps = total_batches*self.num_epochs/self.accum_grad
@@ -180,14 +180,14 @@ class Trainer(object):
         global final_lr_ratio
         global num_warmup_step
         if 'min_lr' in self.cfg['train']:
-            self.min_lr = self.cfg['train']['min_lr']
-            num_warmup_step = self.cfg['train']['warmup_steps']
+            self.min_lr = self.cfg.train['min_lr']
+            num_warmup_step = self.cfg.train['warmup_steps']
             final_lr_ratio = self.min_lr / self.lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae \
             = self.accelerator.prepare(self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae)
-        self.grad_clip = self.cfg['train']['grad_clip']
+        self.grad_clip = self.cfg.train['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 50
         self.global_step = 0
@@ -239,7 +239,7 @@ class Trainer(object):
                 padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                 latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                   data['text_lengths'], padded_mel_code,
-                                  torch.tensor([padded_mel_code.shape[-1] * self.mel_length_compression], device=device),
+                                  data['wav_lens'],
                                   return_latent=True, clip_inputs=False).transpose(1, 2)
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
                 x_start = normalize_tacotron_mel(data['padded_mel'].to(device))
@@ -298,7 +298,7 @@ class Trainer(object):
                     padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                     latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                       data['text_lengths'], padded_mel_code,
-                                      torch.tensor([padded_mel_code.shape[-1] * self.mel_length_compression], device=device),
+                                      data['wav_lens'],
                                       return_latent=True, clip_inputs=False).transpose(1, 2)
 
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
