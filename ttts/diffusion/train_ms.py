@@ -33,6 +33,7 @@ from ttts.utils.diffusion import space_timesteps, SpacedDiffusion
 # from ttts.diffusion.diffusion_util import Diffuser
 # from accelerate import DistributedDataParallelKwargs
 from ttts.utils.utils import AttrDict, get_logger
+from ttts.utils.utils import make_pad_mask
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
 import argparse
@@ -236,11 +237,20 @@ class Trainer(object):
         num_samples = 0
         with torch.no_grad():
             for batch_idx, data in enumerate(self.eval_dataloader):
+                for key in data:
+                    data[key] = data[key].to(device)
+
                 padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                 latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                   data['text_lengths'], padded_mel_code,
                                   data['wav_lens'],
-                                  return_latent=True, clip_inputs=False).transpose(1, 2)
+                                  return_latent=True, clip_inputs=False)
+
+                mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
+                mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
+                latent = latent.masked_fill_(mask_pad, 0.0)
+                latent = latent.transpose(1, 2)
+
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
                 x_start = normalize_tacotron_mel(data['padded_mel'].to(device))
                 aligned_conditioning = latent
@@ -295,16 +305,24 @@ class Trainer(object):
                     continue
 
                 with torch.no_grad():
+                    for key in data:
+                        data[key] = data[key].to(device)
+
                     padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                     latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                       data['text_lengths'], padded_mel_code,
                                       data['wav_lens'],
-                                      return_latent=True, clip_inputs=False).transpose(1, 2)
+                                      return_latent=True, clip_inputs=False)
+
+                mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
+                mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
+                latent = latent.masked_fill_(mask_pad, 0.0)
+                latent = latent.transpose(1, 2)
 
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
-                x_start = normalize_tacotron_mel(data['padded_mel'].to(device))
+                x_start = normalize_tacotron_mel(data['padded_mel'])
                 aligned_conditioning = latent
-                conditioning_latent = normalize_tacotron_mel(data['padded_mel_refer'].to(device))
+                conditioning_latent = normalize_tacotron_mel(data['padded_mel_refer'])
                 t = torch.randint(0, self.desired_diffusion_steps, (x_start.shape[0],), device=device).long().to(device)
                 with self.accelerator.autocast():
                     loss = self.diffuser.training_losses(
