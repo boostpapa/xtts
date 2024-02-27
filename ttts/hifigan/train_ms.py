@@ -23,6 +23,7 @@ import os
 
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 from ttts.utils.utils import AttrDict, get_logger
+from ttts.utils.utils import make_pad_mask
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
 import argparse
@@ -163,7 +164,12 @@ class Trainer(object):
                 latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                   data['text_lengths'], padded_mel_code,
                                   data['wav_lens'],
-                                  return_latent=True, clip_inputs=False).transpose(1, 2)
+                                  return_latent=True, clip_inputs=False)
+
+                mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
+                mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
+                latent = latent.masked_fill_(mask_pad, 0.0)
+                latent = latent.transpose(1, 2)
 
                 x = latent
                 y = data['padded_wav']
@@ -231,7 +237,12 @@ class Trainer(object):
                     latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                       data['text_lengths'], padded_mel_code,
                                       data['wav_lens'],
-                                      return_latent=True, clip_inputs=False).transpose(1, 2)
+                                      return_latent=True, clip_inputs=False)
+
+                mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
+                mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
+                latent = latent.masked_fill_(mask_pad, 0.0)
+                latent = latent.transpose(1, 2)
 
                 x = latent
                 y = data['padded_wav']
