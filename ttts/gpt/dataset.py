@@ -62,6 +62,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
 
             cond_wav_path = random.choice(self.spk2wav[spkid])
             cond_wave = load_audio(cond_wav_path, self.sample_rate)
+            #cond_wave = wave
             if cond_wave is None:
                 return None
             cond_wave_clip = get_prompt_slice(cond_wave, 15, 3, self.sample_rate, self.is_eval)

@@ -33,6 +33,7 @@ from ttts.utils.diffusion import space_timesteps, SpacedDiffusion
 # from ttts.diffusion.diffusion_util import Diffuser
 # from accelerate import DistributedDataParallelKwargs
 from ttts.utils.utils import AttrDict, get_logger
+from ttts.utils.utils import make_pad_mask
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
 import argparse
@@ -118,12 +119,13 @@ class Trainer(object):
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader,
                                           collate_fn=DiffusionCollater())
 
-        self.train_steps = self.cfg['train']['train_steps']
+        self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
-        self.log_interval = self.cfg['train']['log_interval']
-        self.num_epochs = self.cfg['train']['epochs']
-        self.accum_grad = self.cfg['train']['accum_grad']
-        self.use_fp16 = self.cfg['train']['fp16_run']
+        self.log_interval = self.cfg.train['log_interval']
+        self.num_epochs = self.cfg.train['epochs']
+        self.accum_grad = self.cfg.train['accum_grad']
+        self.lr = self.cfg.train['lr']
+        self.use_fp16 = self.cfg.train['fp16_run']
         precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
 
         self.diffusion = AA_diffusion(self.cfg)
@@ -153,7 +155,7 @@ class Trainer(object):
         print(">> GPT weights restored from:", gpt_path)
         self.mel_length_compression = self.gpt.mel_length_compression
 
-        ## load gpt model ##
+        ## load vqvae model ##
         self.dvae = DiscreteVAE(**self.cfg.vqvae)
         dvae_path = self.cfg.dvae_checkpoint
         dvae_checkpoint = torch.load(dvae_path, map_location=torch.device("cpu"))
@@ -171,20 +173,22 @@ class Trainer(object):
             self.model_dir.mkdir(exist_ok=True, parents=True)
         self.logger = get_logger(self.model_dir)
 
-        self.optimizer = AdamW(self.diffusion.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
+        self.optimizer = AdamW(self.diffusion.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0.01)
         global total_training_steps
         total_batches = len(self.train_dataloader)
         total_training_steps = total_batches*self.num_epochs/self.accum_grad
         print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
         global final_lr_ratio
+        global num_warmup_step
         if 'min_lr' in self.cfg['train']:
-            self.min_lr = self.cfg['train']['min_lr']
+            self.min_lr = self.cfg.train['min_lr']
+            num_warmup_step = self.cfg.train['warmup_steps']
             final_lr_ratio = self.min_lr / self.lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae \
             = self.accelerator.prepare(self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae)
-        self.grad_clip = self.cfg['train']['grad_clip']
+        self.grad_clip = self.cfg.train['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 50
         self.global_step = 0
@@ -233,10 +237,20 @@ class Trainer(object):
         num_samples = 0
         with torch.no_grad():
             for batch_idx, data in enumerate(self.eval_dataloader):
-                input_data = [data['padded_mel_refer'], data['padded_text'], data['text_lengths'],
-                                data['padded_mel'], data['wav_lens']]
-                input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                latent = self.gpt(*input_data, return_latent=True, clip_inputs=False).transpose(1, 2)
+                for key in data:
+                    data[key] = data[key].to(device)
+
+                padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
+                latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
+                                  data['text_lengths'], padded_mel_code,
+                                  data['wav_lens'],
+                                  return_latent=True, clip_inputs=False)
+
+                mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
+                mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
+                latent = latent.masked_fill_(mask_pad, 0.0)
+                latent = latent.transpose(1, 2)
+
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
                 x_start = normalize_tacotron_mel(data['padded_mel'].to(device))
                 aligned_conditioning = latent
@@ -251,7 +265,7 @@ class Trainer(object):
                         "refer": conditioning_latent
                     },
                 )["loss"].mean()
-                num_sample = input_data[3].shape[0]
+                num_sample = padded_mel_code.shape[0]
                 num_samples += num_sample
                 total_losses += loss * num_sample
 
@@ -267,6 +281,7 @@ class Trainer(object):
             self.gpt = self.gpt.module
 
         if accelerator.is_main_process:
+            self.logger.info(self.cfg)
             writer = SummaryWriter(log_dir=self.model_dir)
             num_params = sum(p.numel() for p in self.dvae.parameters())
             print('the number of vqvae model parameters: {:,d}'.format(num_params))
@@ -290,15 +305,24 @@ class Trainer(object):
                     continue
 
                 with torch.no_grad():
-                    input_data = [data['padded_mel_refer'], data['padded_text'], data['text_lengths'],
-                                    data['padded_mel'], data['wav_lens']]
-                    input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                    latent = self.gpt(*input_data, return_latent=True, clip_inputs=False).transpose(1, 2)
+                    for key in data:
+                        data[key] = data[key].to(device)
+
+                    padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
+                    latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
+                                      data['text_lengths'], padded_mel_code,
+                                      data['wav_lens'],
+                                      return_latent=True, clip_inputs=False)
+
+                mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
+                mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
+                latent = latent.masked_fill_(mask_pad, 0.0)
+                latent = latent.transpose(1, 2)
 
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
-                x_start = normalize_tacotron_mel(data['padded_mel'].to(device))
+                x_start = normalize_tacotron_mel(data['padded_mel'])
                 aligned_conditioning = latent
-                conditioning_latent = normalize_tacotron_mel(data['padded_mel_refer'].to(device))
+                conditioning_latent = normalize_tacotron_mel(data['padded_mel_refer'])
                 t = torch.randint(0, self.desired_diffusion_steps, (x_start.shape[0],), device=device).long().to(device)
                 with self.accelerator.autocast():
                     loss = self.diffuser.training_losses(

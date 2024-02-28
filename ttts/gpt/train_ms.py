@@ -66,7 +66,7 @@ class Trainer(object):
         self.train_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['training_files'], is_eval=False)
         self.eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
-        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollater(self.cfg))
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
         self.log_interval = self.cfg.train['log_interval']

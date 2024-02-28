@@ -226,7 +226,8 @@ class ConditioningEncoder(nn.Module):
         if self.mean:
             return h.mean(dim=2)
         else:
-            return h[:, :, 0]
+            return h
+            #return h[:, :, 0]
 
 
 class LearnedPositionEmbeddings(nn.Module):
@@ -334,7 +335,8 @@ class UnifiedVoice(nn.Module):
         self.mel_length_compression = mel_length_compression
         self.cond_num = 32
         if use_perceiver:
-            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=100, num_latents=self.cond_num)
+            self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
+            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
         else:
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
         self.use_perceiver = use_perceiver
@@ -449,10 +451,7 @@ class UnifiedVoice(nn.Module):
         enc = self.final_norm(enc)
 
         if return_latent:
-            if self.use_perceiver:
-                return enc[:, :first_inputs.shape[1]], enc[:, -second_inputs.shape[1]:]
-            else:
-                return enc[:, speech_conditioning_inputs.shape[1]:speech_conditioning_inputs.shape[1]+first_inputs.shape[1]], enc[:, -second_inputs.shape[1]:]
+            return enc[:, :first_inputs.shape[1]], enc[:, -second_inputs.shape[1]:]
 
         first_logits = enc[:, :first_inputs.shape[1]]
         first_logits = first_head(first_logits)
@@ -478,9 +477,9 @@ class UnifiedVoice(nn.Module):
             conds = torch.stack(conds, dim=1)
             conds = conds.mean(dim=1)
         else:
-            #if speech_conditioning_input.ndim == 4:
-            #    speech_conditioning_input = speech_conditioning_input.squeeze(1)
-            #speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
+            if speech_conditioning_input.ndim == 4:
+                speech_conditioning_input = speech_conditioning_input.squeeze(1)
+            speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
             conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, d, 32)
         return conds
 
