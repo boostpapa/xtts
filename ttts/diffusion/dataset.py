@@ -7,6 +7,7 @@ import torch.utils.data
 from torch import LongTensor
 from tqdm import tqdm
 import torchaudio
+from collections import defaultdict
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
@@ -19,9 +20,13 @@ class DiffusionDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
         self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
         self.datalist = []
+        self.spk2wav = defaultdict(list)
         with open(datafile, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.datalist.append(line.strip())
+                # key, wav_path, spkid, language, raw_text, cleand_text
+                strs = line.strip().split("|")
+                self.spk2wav[strs[2]].append(strs[1])
 
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
@@ -45,20 +50,26 @@ class DiffusionDataset(torch.utils.data.Dataset):
 
         key = strs[0]
         wav_path = strs[1]
+        spkid = strs[2]
+
         wav = load_audio(wav_path, self.sample_rate)
         if wav is None:
             return None
-
         mel_raw = self.mel_extractor(wav)[0]
         # print(f"mel_raw.shape: {mel_raw.shape}")
 
-        split = random.randint(int(mel_raw.shape[1]//3), int(mel_raw.shape[1]//3*2))
-        if random.random() > 0.5:
-            mel_refer = mel_raw[:, split:]
-        else:
-            mel_refer = mel_raw[:, :split]
-        if mel_refer.shape[1] > 200:
-            mel_refer = mel_refer[:, :200]
+        '''
+        refer_wav_path = random.choice(self.spk2wav[spkid])
+        refer_wav = load_audio(refer_wav_path, self.sample_rate)
+        # refer_wav = wav
+        if refer_wav is None:
+            return None
+        refer_wav_clip = get_prompt_slice(refer_wav, 4, 1, self.sample_rate, self.is_eval)
+        mel_refer = self.mel_extractor(refer_wav_clip)[0]
+        '''
+        mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
+        if mel_refer.shape[1] > 300:
+            mel_refer = mel_refer[:, :300]
 
         if mel_raw.shape[1] > 400:
             mel_raw = mel_raw[:, :400]
