@@ -58,16 +58,14 @@ class DiffusionDataset(torch.utils.data.Dataset):
         mel_raw = self.mel_extractor(wav)[0]
         # print(f"mel_raw.shape: {mel_raw.shape}")
 
-        '''
         refer_wav_path = random.choice(self.spk2wav[spkid])
         refer_wav = load_audio(refer_wav_path, self.sample_rate)
-        # refer_wav = wav
         if refer_wav is None:
             return None
         refer_wav_clip = get_prompt_slice(refer_wav, 4, 1, self.sample_rate, self.is_eval)
         mel_refer = self.mel_extractor(refer_wav_clip)[0]
-        '''
-        mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
+
+        #mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
         if mel_refer.shape[1] > 300:
             mel_refer = mel_refer[:, :300]
 
