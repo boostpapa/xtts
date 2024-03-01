@@ -73,3 +73,9 @@ clip:
     pool_type: 'tok'
     pos_embed_type: 'learnable'
     final_ln_after_pool: false
+mrte:
+  mel_channels : 100
+  semantic_channels : 1024
+  model_channels : 512
+  out_channels : 1024
+  num_heads : 4
