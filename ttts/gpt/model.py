@@ -405,8 +405,8 @@ class UnifiedVoice(nn.Module):
         # self.inference_model = PrunedGPT2InferenceModel(gpt_config, self.gpt, self.mel_pos_embedding, self.mel_embedding, self.final_norm, self.mel_head)
         self.gpt.wte = self.mel_embedding
     def build_aligned_inputs_and_targets(self, input, start_token, stop_token):
-        inp = F.pad(input, (1,0), value=start_token)
-        tar = F.pad(input, (0,1), value=stop_token)
+        inp = F.pad(input, (1, 0), value=start_token)
+        tar = F.pad(input, (0, 1), value=stop_token)
         return inp, tar
 
     def set_mel_padding(self, mel_input_tokens, mel_lengths):
@@ -455,11 +455,11 @@ class UnifiedVoice(nn.Module):
 
         first_logits = enc[:, :first_inputs.shape[1]]
         first_logits = first_head(first_logits)
-        first_logits = first_logits.permute(0,2,1)
+        first_logits = first_logits.permute(0, 2, 1)
         if second_inputs is not None:
             second_logits = enc[:, -second_inputs.shape[1]:]
             second_logits = second_head(second_logits)
-            second_logits = second_logits.permute(0,2,1)
+            second_logits = second_logits.permute(0, 2, 1)
             return first_logits, second_logits
         else:
             return first_logits
@@ -551,10 +551,10 @@ class UnifiedVoice(nn.Module):
 
         # Set paddings to -1 to ignore them in loss
         for idx, l in enumerate(text_lengths):
-            text_targets[idx, l + 1 :] = -1
+            text_targets[idx, l+1:] = -1
 
         for idx, l in enumerate(mel_codes_lengths):
-            mel_targets[idx, l + 1 :] = -1
+            mel_targets[idx, l+1:] = -1
 
         if return_attentions:
             return mel_logits
@@ -595,7 +595,7 @@ class UnifiedVoice(nn.Module):
             inputs = torch.cat([fake_inputs, input_tokens], dim=1)
 
         logits_processor = LogitsProcessorList([TypicalLogitsWarper(mass=typical_mass)]) if typical_sampling else LogitsProcessorList()
-        max_length = trunc_index + self.max_mel_tokens - 1  if max_generate_length is None else trunc_index + max_generate_length
+        max_length = trunc_index + self.max_mel_tokens - 1 if max_generate_length is None else trunc_index + max_generate_length
         gen = self.inference_model.generate(inputs, bos_token_id=self.start_mel_token, pad_token_id=self.stop_mel_token, eos_token_id=self.stop_mel_token,
                                             max_length=max_length, logits_processor=logits_processor,
                                             num_return_sequences=num_return_sequences, **hf_generate_kwargs)
@@ -605,8 +605,8 @@ class UnifiedVoice(nn.Module):
 if __name__ == '__main__':
     gpt = UnifiedVoice(model_dim=256, heads=4, train_solo_embeddings=True, use_mel_codes_as_input=True, max_conditioning_inputs=4)
     l = gpt(torch.randn(2, 3, 80, 800),
-            torch.randint(high=120, size=(2,120)),
+            torch.randint(high=120, size=(2, 120)),
             torch.tensor([32, 120]),
-            torch.randint(high=8192, size=(2,250)),
-            torch.tensor([250*256,195*256]))
-    gpt.text_forward(torch.randn(2,80,800), torch.randint(high=50, size=(2,80)), torch.tensor([32, 80]))
+            torch.randint(high=8192, size=(2, 250)),
+            torch.tensor([250*256, 195*256]))
+    gpt.text_forward(torch.randn(2, 80, 800), torch.randint(high=50, size=(2,80)), torch.tensor([32, 80]))
