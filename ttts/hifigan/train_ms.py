@@ -2,6 +2,7 @@ import copy
 from datetime import datetime
 from inspect import signature
 import json
+from omegaconf import OmegaConf
 from pathlib import Path
 from accelerate import Accelerator
 from tqdm import tqdm
@@ -43,16 +44,17 @@ class Trainer(object):
     def __init__(self, args):
         # ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
         # self.accelerator = Accelerator(kwargs_handlers=[ddp_kwargs])
-        json_config = json.load(open(args.config))
-        self.cfg = AttrDict(json_config)
+        #json_config = json.load(open(args.config))
+        #self.cfg = AttrDict(json_config)
+        self.cfg = OmegaConf.load(args.config)
 
         self.train_dataset = HifiGANDataset(self.cfg, self.cfg.dataset['training_files'])
         self.eval_dataset = HifiGANDataset(self.cfg, self.cfg.dataset['validation_files'])
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader,
-                                           collate_fn=HiFiGANCollater(self.cfg))
+                                           collate_fn=HiFiGANCollater())
 
-        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader,
-                                          collate_fn=HiFiGANCollater(self.cfg))
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader_eval,
+                                          collate_fn=HiFiGANCollater())
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
         self.log_interval = self.cfg['train']['log_interval']
@@ -95,8 +97,8 @@ class Trainer(object):
         self.D_optimizer = AdamW(self.hifigan_discriminator.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0.01)
         self.G_scheduler = torch.optim.lr_scheduler.LambdaLR(self.G_optimizer, lr_lambda=warmup)
         self.D_scheduler = torch.optim.lr_scheduler.LambdaLR(self.D_optimizer, lr_lambda=warmup)
-        self.hifigan_decoder, self.hifigan_discriminator, self.dataloader, self.G_optimizer, self.D_optimizer, self.G_scheduler, self.D_scheduler, self.gpt, self.dvae \
-            = self.accelerator.prepare(self.hifigan_decoder, self.hifigan_discriminator, self.dataloader, self.G_optimizer, self.D_optimizer, self.G_scheduler, self.D_scheduler, self.gpt, self.dvae)
+        self.hifigan_decoder, self.hifigan_discriminator, self.hifigan_decoder.speaker_encoder, self.train_dataloader, self.eval_dataloader, self.G_optimizer, self.D_optimizer, self.G_scheduler, self.D_scheduler, self.gpt, self.dvae \
+            = self.accelerator.prepare(self.hifigan_decoder, self.hifigan_discriminator, self.hifigan_decoder.speaker_encoder, self.train_dataloader, self.eval_dataloader, self.G_optimizer, self.D_optimizer, self.G_scheduler, self.D_scheduler, self.gpt, self.dvae)
         self.mel_extractor = MelSpectrogramFeatures(**self.cfg.dataset['mel']).to(self.accelerator.device)
         self.disc_loss = DiscriminatorLoss()
         self.gen_loss = GeneratorLoss()
@@ -105,10 +107,10 @@ class Trainer(object):
             self.grad_clip = 50
         self.global_step = 0
 
-    def get_speaker_embedding(self, audio, sr):
+    def get_speaker_embedding(self, hifigan_decoder, audio, sr):
         audio_16k = torchaudio.functional.resample(audio, sr, 16000)
         return (
-            self.hifigan_decoder.speaker_encoder.forward(audio_16k.to(self.accelerator.device), l2_norm=True)
+            hifigan_decoder.speaker_encoder.forward(audio_16k.to(self.accelerator.device), l2_norm=True)
             .unsqueeze(-1)
             .to(self.accelerator.device)
         )
@@ -160,6 +162,9 @@ class Trainer(object):
         num_samples = 0
         with torch.no_grad():
             for batch_idx, data in enumerate(self.eval_dataloader):
+                for key in data:
+                    data[key] = data[key].to(device)
+
                 padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                 latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                   data['text_lengths'], padded_mel_code,
@@ -175,14 +180,14 @@ class Trainer(object):
                 y = data['padded_wav']
 
                 # discriminator loss
-                g = self.get_speaker_embedding(data['padded_wav_refer'], 24000)
-                y_hat = self.hifigan_decoder(x, g)
-                score_fake, feat_fake = self.hifigan_discriminator(y_hat.detach())
-                score_real, feat_real = self.hifigan_discriminator(y.clone())
+                g = self.get_speaker_embedding(hifigan_decoder, data['padded_wav_refer'], 24000)
+                y_hat = hifigan_decoder(x, g)
+                score_fake, feat_fake = hifigan_discriminator(y_hat.detach())
+                score_real, feat_real = hifigan_discriminator(y.clone())
                 loss_d = self.disc_loss(score_fake, score_real)['loss']
 
                 # generator loss
-                score_fake, feat_fake = self.hifigan_discriminator(y_hat)
+                score_fake, feat_fake = hifigan_discriminator(y_hat)
                 loss_g = self.gen_loss(y_hat, y, score_fake, feat_fake, feat_real)['loss']
 
                 num_sample = y.shape[0]
@@ -205,6 +210,7 @@ class Trainer(object):
             self.gpt = self.gpt.module
 
         if accelerator.is_main_process:
+            self.logger.info(self.cfg)
             writer = SummaryWriter(log_dir=self.model_dir)
             num_params = sum(p.numel() for p in self.dvae.parameters())
             print('the number of vqvae model parameters: {:,d}'.format(num_params))
@@ -217,7 +223,7 @@ class Trainer(object):
 
             self.logger.info("Initial Evaluating ...")
             losses = self.eval()
-            lr = self.optimizer.param_groups[0]["lr"]
+            lr = self.G_optimizer.param_groups[0]["lr"]
             self.logger.info([x.item() for x in losses] + [self.global_step, lr])
             self.save_checkpoint(self.model_dir.joinpath(f"init.pth"))
 
@@ -233,6 +239,9 @@ class Trainer(object):
                     continue
 
                 with torch.no_grad():
+                    for key in data:
+                        data[key] = data[key].to(device)
+
                     padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                     latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                       data['text_lengths'], padded_mel_code,
@@ -247,7 +256,7 @@ class Trainer(object):
                 x = latent
                 y = data['padded_wav']
                 with self.accelerator.autocast():
-                    g = self.get_speaker_embedding(data['padded_wav_refer'], 24000)
+                    g = self.get_speaker_embedding(self.hifigan_decoder, data['padded_wav_refer'], 24000)
                     y_hat = self.hifigan_decoder(x, g)
                     score_fake, feat_fake = self.hifigan_discriminator(y_hat.detach())
                     score_real, feat_real = self.hifigan_discriminator(y.clone())
@@ -277,7 +286,7 @@ class Trainer(object):
 
                 if self.global_step % self.log_interval == 0:
                     #logging.warning(f"batch size: {input_data[3].shape}")
-                    lr = self.optimizer.param_groups[0]["lr"]
+                    lr = self.G_optimizer.param_groups[0]["lr"]
                     losses = [total_losses, loss_d, loss_g]
                     self.logger.info("Train Epoch: {} [{:.0f}%]".format(
                         epoch, 100.0 * batch_idx / len(self.train_dataloader)
@@ -302,7 +311,7 @@ class Trainer(object):
             if accelerator.is_main_process:
                 self.logger.info(f"Evaluating Epoch: {epoch}")
                 losses = self.eval()
-                lr = self.optimizer.param_groups[0]["lr"]
+                lr = self.G_optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
             self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"))
         accelerator.print('training complete')

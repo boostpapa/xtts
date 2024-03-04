@@ -4,6 +4,7 @@ import functools
 import math
 from pathlib import Path
 import re
+import random
 
 import torch
 import torch.nn as nn
@@ -44,6 +45,33 @@ def load_audio(audiopath, sampling_rate):
     # clip audio invalid values
     audio.clip_(-1, 1)
     return audio
+
+
+def get_prompt_slice(audio, max_audio_length=20, min_audio_length=3, sample_rate=24000, is_eval=False):
+    max_sample_length = max_audio_length * sample_rate
+    min_sample_length = min_audio_length * sample_rate
+    rel_clip = audio
+    # if eval uses a middle size sample when it is possible to be more reproducible
+    if is_eval:
+        sample_length = int((min_sample_length + max_sample_length) / 2)
+    else:
+        sample_length = random.randint(min_sample_length, max_sample_length)
+    gap = rel_clip.shape[-1] - sample_length
+    if gap < 0 and is_eval:
+        sample_length = rel_clip.shape[-1]
+    elif gap < 0:
+        sample_length = rel_clip.shape[-1] // 2
+    gap = rel_clip.shape[-1] - sample_length
+
+    # if eval start always from the position 0 to be more reproducible
+    if is_eval:
+        rand_start = 0
+    else:
+        rand_start = random.randint(0, gap)
+
+    rand_end = rand_start + sample_length
+    rel_clip = rel_clip[:, rand_start:rand_end]
+    return rel_clip
 
 
 def make_pad_mask(lengths: torch.Tensor, max_len: int = 0) -> torch.Tensor:

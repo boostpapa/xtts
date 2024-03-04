@@ -54,13 +54,17 @@ class HifiGANDataset(torch.utils.data.Dataset):
                 wav_refer = wav[:, split:]
             else:
                 wav_refer = wav[:, :split]
-            if wav_refer.shape[1] > (200*256):
-                wav_refer = wav_refer[:, :200*256]
+            if wav_refer.shape[1] > (50*256):
+                wav_refer = wav_refer[:, :50*256]
             mel_refer = self.mel_extractor(wav_refer)[0]
+            if mel_refer.shape[1] > 50:
+                mel_refer = mel_refer[:, :50]
 
             if wav.shape[1] > 400*256:
                 wav = wav[:, :400*256]
             mel = self.mel_extractor(wav)[0]
+            if mel.shape[1] > 400:
+                mel = mel[:, :400]
 
         except:
             return None
@@ -83,7 +87,7 @@ class HiFiGANCollater():
         text_lens = [len(x[0]) for x in batch]
         max_text_len = max(text_lens)
 
-        mel_lens = [len(x[1]) for x in batch]
+        mel_lens = [x[1].shape[1] for x in batch]
         max_mel_len = max(mel_lens)
 
         wav_lens = [x[2].shape[1] for x in batch]
