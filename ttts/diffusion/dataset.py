@@ -52,6 +52,7 @@ class DiffusionDataset(torch.utils.data.Dataset):
         mel_raw = self.mel_extractor(wav)[0]
         # print(f"mel_raw.shape: {mel_raw.shape}")
 
+        '''
         split = random.randint(int(mel_raw.shape[1]//3), int(mel_raw.shape[1]//3*2))
         if random.random() > 0.5:
             mel_refer = mel_raw[:, split:]
@@ -59,6 +60,10 @@ class DiffusionDataset(torch.utils.data.Dataset):
             mel_refer = mel_raw[:, :split]
         if mel_refer.shape[1] > 200:
             mel_refer = mel_refer[:, :200]
+        '''
+        mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
+        if mel_refer.shape[1] > 300:
+            mel_refer = mel_refer[:, :300]
 
         if mel_raw.shape[1] > 400:
             mel_raw = mel_raw[:, :400]
