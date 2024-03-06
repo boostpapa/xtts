@@ -8,41 +8,33 @@ import torch.nn.functional as F
 import torch.utils.data
 import torchaudio
 import torchvision
+from ttts.utils.utils import load_audio
 from tqdm import tqdm
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures, MelSpectrogramFeatures1
 
 
 class PreprocessedMelDataset(torch.utils.data.Dataset):
 
-    def __init__(self, audio_paths, opt):
+    def __init__(self, cfg, audio_paths, is_eval=False):
 
         self.wav_paths = []
         with open(audio_paths, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.wav_paths.append(line.strip())
 
-        self.pad_to = opt['dataset']['pad_to_samples']
-        self.squeeze = opt['dataset']['squeeze']
-        self.sample_rate = opt['dataset']['sample_rate']
-        if 'mel_type' in opt['dataset'] and opt['dataset']['mel_type'] == "librosa":
-            self.mel_extractor = MelSpectrogramFeatures1(**opt['dataset']['mel'])
+        self.pad_to = cfg['dataset']['pad_to_samples']
+        self.squeeze = cfg['dataset']['squeeze']
+        self.sample_rate = cfg['dataset']['sample_rate']
+        if 'mel_type' in cfg['dataset'] and cfg['dataset']['mel_type'] == "librosa":
+            self.mel_extractor = MelSpectrogramFeatures1(**cfg['dataset']['mel'])
         else:
-            self.mel_extractor = MelSpectrogramFeatures(**opt['dataset']['mel'])
+            self.mel_extractor = MelSpectrogramFeatures(**cfg['dataset']['mel'])
+        self.is_eval = is_eval
 
     def __getitem__(self, index):
 
-        wav_file = self.wav_paths[index]
-        wave, sample_rate = torchaudio.load(wav_file)
-        #print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
-        if wave.size(0) > 1:  # mix to mono
-            wave = wave[0].unsqueeze(0)
-        if sample_rate != self.sample_rate:
-            try:
-                transform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
-                wave = transform(wave)
-            except:
-                print(f"Warning: {wav_file}, wave shape: {wave.shape}, sample_rate: {sample_rate}")
-                return None
+        wav_path = self.wav_paths[index]
+        wave = load_audio(wav_path, self.sample_rate)
         #print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
 
         mel = self.mel_extractor(wave)

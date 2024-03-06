@@ -15,12 +15,15 @@ from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ExponentialLR
 from accelerate import Accelerator
+from ttts.utils.utils import AttrDict, get_logger
 import argparse
 import logging
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 
 logging.getLogger("numba").setLevel(logging.WARNING)
+
+
 def set_requires_grad(model, val):
     for p in model.parameters():
         p.requires_grad = val
@@ -38,48 +41,40 @@ def get_grad_norm(model):
     return total_norm
 
 
-def cycle(dl):
-    while True:
-        for data in dl:
-            yield data
-
-
 class Trainer(object):
     def __init__(self, args):
-        self.cfg = json.load(open(args.config))
-        self.train_dataset = PreprocessedMelDataset(self.cfg['dataset']['training_files'], self.cfg)
-        self.eval_dataset = PreprocessedMelDataset(self.cfg['dataset']['validation_files'], self.cfg)
-        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg['dataloader'])
-        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg['dataloader'])
-        self.train_steps = self.cfg['train']['train_steps']
-        self.eval_interval = self.cfg['train']['eval_interval']
-        self.log_interval = self.cfg['train']['log_interval']
-        self.num_epochs = self.cfg['train']['epochs']
+        json_config = json.load(open(args.config))
+        self.cfg = AttrDict(json_config)
+        self.train_dataset = PreprocessedMelDataset(self.cfg, self.cfg.dataset['training_files'])
+        self.eval_dataset = PreprocessedMelDataset(self.cfg,  self.cfgdataset['validation_files'], is_eval=True)
+        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader)
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader)
+        self.train_steps = self.cfg.train['train_steps']
+        self.eval_interval = self.cfg.train['eval_interval']
+        self.log_interval = self.cfg.train['log_interval']
+        self.num_epochs = self.cfg.train['epochs']
         self.c_comm = 0.25
-        self.use_fp16 = self.cfg['train']['fp16_run']
+        self.use_fp16 = self.cfg.train['fp16_run']
         precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
         self.vqvae = DiscreteVAE(**self.cfg['vqvae'])
         if 'pretrain_model' in self.cfg['train']:
-            model_pth = self.cfg['train']['pretrain_model']
+            model_pth = self.cfg.train['pretrain_model']
             logging.warning("loading pretrain model: {}".format(model_pth))
             dvae_checkpoint = torch.load(model_pth, map_location=torch.device("cpu"))
+            dvae_checkpoint = dvae_checkpoint['model'] if 'model' in dvae_checkpoint else dvae_checkpoint
             self.vqvae.load_state_dict(dvae_checkpoint, strict=False)
             print(">> DVAE weights restored from:", model_pth)
-            #load_trained_modules(self.vqvae, model_pth)
             
         self.accelerator = Accelerator(mixed_precision=precision, split_batches=True)
         self.model_dir = Path(args.model)
         if self.accelerator.is_main_process:
-            # self.ema_model = self._get_target_encoder(self.vqvae).to(self.accelerator.device)
-            #now = datetime.now()
-            #self.logs_folder = Path(args.model+'/'+now.strftime("%Y-%m-%d-%H-%M-%S"))
-            self.model_dir.mkdir(exist_ok = True, parents=True)
+            self.model_dir.mkdir(exist_ok=True, parents=True)
         self.logger = get_logger(self.model_dir)
-        #self.ema_updater = EMA(0.999)
+
         self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
         self.vqvae, self.train_dataloader, self.optimizer = self.accelerator.prepare(self.vqvae, self.train_dataloader, self.optimizer)
-        #self.dataloader = cycle(self.dataloader)
+
         self.accum_grad = self.cfg['train']['accum_grad']
         self.grad_clip = self.cfg['train']['grad_clip']
         if self.grad_clip <= 0:
@@ -95,8 +90,13 @@ class Trainer(object):
 
     def save_checkpoint(self, path):
         if self.accelerator.is_main_process:
-            unwrapped_model = self.accelerator.unwrap_model(self.vqvae)
-            self.accelerator.save(unwrapped_model.state_dict(), path)
+            data = {
+                'step': self.global_step,
+                'model': self.accelerator.get_state_dict(self.vqvae),
+            }
+            torch.save(data, path)
+            #unwrapped_model = self.accelerator.unwrap_model(self.vqvae)
+            #self.accelerator.save(unwrapped_model.state_dict(), path)
             #torch.save(unwrapped_model, path)
 
     def load_model(self, model_path):
@@ -114,10 +114,10 @@ class Trainer(object):
         model = self.accelerator.unwrap_model(self.vqvae)
         device = self.accelerator.device
         model.eval()
-        recon_losses = 0
-        commitment_losses = 0
-        ssim_losses = 0
-        num_samples = 0
+        recon_losses = 0.0
+        commitment_losses = 0.0
+        ssim_losses = 0.0
+        num_samples = 0.0
         with torch.no_grad():
             for batch_idx, mel in enumerate(self.eval_dataloader):
                 mel = mel.to(device).squeeze(1)
@@ -153,9 +153,9 @@ class Trainer(object):
 
         for epoch in range(0, self.num_epochs):
             for batch_idx, mel in enumerate(self.train_dataloader):
-                recon_losses = 0
-                ssim_losses = 0
-                commitment_losses = 0
+                recon_losses = 0.0
+                ssim_losses = 0.0
+                commitment_losses = 0.0
                 total_losses = 0.
                 for _ in range(self.accum_grad):
                     mel = mel.to(device).squeeze(1)

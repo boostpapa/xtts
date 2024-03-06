@@ -249,6 +249,7 @@ class MRTE(nn.Module):
         x = self.c_post(x)
         return x
 
+
 if __name__ == "__main__":
     content_enc = torch.randn(3, 192, 100)
     content_mask = torch.ones(3, 1, 100)
