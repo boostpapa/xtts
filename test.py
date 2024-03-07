@@ -1,6 +1,7 @@
 from pypinyin import lazy_pinyin, Style
 import torch
 import re
+import numpy as np
 from omegaconf import OmegaConf
 from ttts.gpt.model import UnifiedVoice
 from ttts.vqvae.xtts_dvae import DiscreteVAE
@@ -10,7 +11,7 @@ MODELS = {
     'vqvae.pth':'/speechwork/users/wd007/tts/xtts2/vqvae/s4/exp/baseline_lossl1_ssim1/epoch_19.pth',
     'gpt.pth': '/speechwork/users/wd007/tts/xtts2/gpt/s2_v2/exp/baseline_noe_ignore/epoch_0.pth',
     'clvp2.pth': '',
-    'diffusion.pth': '/speechwork/users/wd007/tts/xtts2/diffusion/s2/exp/baseline/epoch_5.pth',
+    'diffusion.pth': '/speechwork/users/wd007/tts/xtts2/diffusion/s2_v3/exp/baseline_mrte_clip1/epoch_2.pth',
     'vocoder.pth': 'model/pytorch_model.bin',
     'rlg_auto.pth': '',
     'rlg_diffuser.pth': '',
@@ -23,7 +24,7 @@ from ttts.utils.infer_utils import load_model
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 import torchaudio
 
-config='/speechwork/users/wd007/tts/xtts2/diffusion/s2/configs/config_test_v2.yaml'
+config='/speechwork/users/wd007/tts/xtts2/diffusion/s2_v2/configs/config_test_v2.yaml'
 cfg = OmegaConf.load(config)
 
 ## load gpt model ##
@@ -49,11 +50,20 @@ dvae.eval()
 print(">> vqvae weights restored from:", dvae_path)
 
 cond_audio = '/cfs/import/tts/opensource/baker_BZNSYP/BZNSYP/Wave_22k/008669.wav'
-cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/live_audio2_57.wav'
-cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/jiachun/jiachun/speak/ZH/wav/00000001_000019.wav'
-cond_audio = '/cfs/import/tts/opensource/baker_BZNSYP/BZNSYP/Wave_22k/003261.wav'
 cond_audio = '/speechwork/users/wd007/tts/yourtts/zhibo/live_audio2/wavs/live_audio2_741.wav'
+cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei.wav'
+cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xueli.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
+cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/live_audio2_57.wav'
+cond_audio = '/cfs/import/tts/opensource/baker_BZNSYP/BZNSYP/Wave_22k/003261.wav'
+cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/22all/22/speak/ZH/wav/22-all_speak_ZH_YouYou_emotion_ZH_309自豪_20230613_20230627-0150729-0155966.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
+cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/jiachun/jiachun/speak/ZH/wav/00000001_000019.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/chenrui1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/010100010068.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/shujuan.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
 audio,sr = torchaudio.load(cond_audio)
 if audio.shape[0]>1:
     audio = audio[0].unsqueeze(0)
@@ -88,10 +98,13 @@ diffusion_conditioning = normalize_tacotron_mel(cond_mel)
 text = "历史将永远记住同志们的杰出创造和奉献，党和人民感谢你们。"
 text = "但我们的损失由谁来补?"
 text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划."
+text = "玥玥爱土豆，爱爸爸妈妈，爱奶奶，喜欢去迪斯尼玩，喜欢癞蛤蟆"
 text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划.如果大家时间都 ok 的话,就安排在今天下午 review 了.然后可能得辛苦 harry 老师帮忙组织一下团建的事,嗯也不知道安排怎么样了,今天下午我要放假了,接下来一周就不在公司,大家新年快乐!"
-text = "其次是双人下午茶项目，这个项目包含了精美的下午茶套餐, 让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
+text = "武士狐媚,我来世一定要身为一只猫."
 text = "天空上，火幕蔓延而开，将方圆数以千万计的人类尽数笼罩。而在火幕扩散时，那绚丽火焰之中的人影也是越来越清晰，片刻后，火焰减弱而下，一道黑衫身影，便是清楚的出现在了这片天地之间。"
 text = "接下来给大家介绍一个团购产品--深圳绿景酒店1晚加双人下午茶。首先，让我们来看看这个团购的价格,这个团购包含的房间门市价是每晚1888元，直播间售价1晚住宿加其他项目只需要1618元。接下来，我们来详细介绍一下这个团购的各个项目。首先是住宿项目，房型有高级双床房或高级大床房，可任选其中一个房型。这两种房型都有38平米的面积，位于8-12层，视野开阔，房间内有窗户，可以欣赏室外的城景或花园景,无论是商务出差还是休闲旅游，都能满足您的需求。其次是双人下午茶项目，这个项目包含了精美的下午茶套餐，让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
+text = "其次是双人下午茶项目，这个项目包含了精美的下午茶套餐, 让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
+text = "千万别被剑角龙顶到，剑角龙又名顶角龙，意为有角的头顶，顾名思义它的头上长了一个头盔。你可不要被它名字迷惑，它不是角龙，而是生活在白垩纪晚期的肿头龙家族中的一员"
 
 '''
 pinyin = ' '.join(lazy_pinyin(text, style=Style.TONE3, neutral_tone_with_five=True))
@@ -109,10 +122,12 @@ sentences = [i for i in re.split(pattern, text) if i.strip() != ""]
 print(sentences)
 
 top_p = .8
-temperature = .8
+top_k = 20
+temperature = 1.5
 autoregressive_batch_size = 1
-length_penalty = 1.0
-repetition_penalty = 2.0
+length_penalty = 0.0
+num_beams = 5
+repetition_penalty = 10.0
 max_mel_tokens = 600
 sampling_rate = 24000
 lang = "ZH"
@@ -125,7 +140,8 @@ for sent in sentences:
     print(sent)
     #pinyin = ' '.join(lazy_pinyin(sent, style=Style.TONE3, neutral_tone_with_five=True))
     norm_text, words = clean_text1(sent, lang)
-    cleand_text = f"[{lang}] {' '.join(words)}"
+    #cleand_text = f"[{lang}] {' '.join(words)}"
+    cleand_text = ' '.join(words)
     print(cleand_text)
     text_tokens = torch.IntTensor(tokenizer.encode(cleand_text)).unsqueeze(0).to(device)
     text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
@@ -138,9 +154,11 @@ for sent in sentences:
         codes = gpt.inference_speech(auto_conditioning, text_tokens,
                                 do_sample=True,
                                 top_p=top_p,
+                                top_k=top_k,
                                 temperature=temperature,
                                 num_return_sequences=autoregressive_batch_size,
                                 length_penalty=length_penalty,
+                                num_beams=num_beams,
                                 repetition_penalty=repetition_penalty,
                                 max_generate_length=max_mel_tokens)
         print(codes)
@@ -149,12 +167,11 @@ for sent in sentences:
         print(codes.shape)
         mel1, _ = dvae.decode(codes)
         wav1 = vocos.decode(mel1.detach().cpu())
-        torchaudio.save('gen1.wav',wav1.detach().cpu(), 24000)
-        wav1 = 32767 / max(0.01, torch.max(torch.abs(wav1))) * 0.7 * wav1.detach()
-        torch.clip(wav1, -32767.0, 32767.0)
+        #torchaudio.save('gen1.wav',wav1.detach().cpu(), 24000)
+        #wav1 = 32767 / max(0.01, torch.max(torch.abs(wav1))) * 0.7 * wav1.detach()
+        #torch.clip(wav1, -32767.0, 32767.0)
         wavs1.append(wav1)
 
-        '''
         latent = gpt(auto_conditioning, text_tokens,
                     torch.tensor([text_tokens.shape[-1]], device=text_tokens.device), codes,
                     torch.tensor([codes.shape[-1]*gpt.mel_length_compression], device=text_tokens.device),
@@ -163,8 +180,9 @@ for sent in sentences:
 
         mel = do_spectrogram_diffusion(diffusion, diffuser, latent, diffusion_conditioning, temperature=1.0).detach().cpu()
         wav = vocos.decode(mel)
+        wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 0.7 * wav.detach()
+        torch.clip(wav, -32767.0, 32767.0)
         wavs.append(wav)
-        '''
         #wavs.append(zero_wav)
 
 
@@ -178,6 +196,10 @@ wavfile.write('gen.wav', 24000, wav.astype(np.int16))
 '''
 
 wav1 = torch.cat(wavs1, dim=1)
-torchaudio.save('gen1.wav', wav1.type(torch.int16), 24000)
-#torchaudio.save('gen1.wav', wav1, 24000)
+#torchaudio.save('gen1.wav', wav1.type(torch.int16), 24000)
+torchaudio.save('gen1.wav', wav1, 24000)
+
+wav = torch.cat(wavs, dim=1)
+torchaudio.save('gen.wav', wav.type(torch.int16), 24000)
+
 #Audio(wav, rate=sampling_rate)

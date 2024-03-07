@@ -106,8 +106,10 @@ class Trainer(object):
         total_training_steps = total_batches*self.num_epochs/self.accum_grad
         print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
         global final_lr_ratio
+        global num_warmup_step
         if 'min_lr' in self.cfg.train:
             self.min_lr = self.cfg.train['min_lr']
+            num_warmup_step = self.cfg.train['warmup_steps']
             final_lr_ratio = self.min_lr / self.lr
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
@@ -175,6 +177,7 @@ class Trainer(object):
                 input_data[3] = self.dvae.get_codebook_indices(input_data[3])
                 loss_text, loss_mel, mel_logits = model(*input_data)
                 num_sample = input_data[0].shape[0]
+                #self.logger.info([loss_text, loss_mel])
                 text_losses += loss_text * num_sample
                 mel_losses += loss_mel * num_sample
                 num_samples += num_sample
