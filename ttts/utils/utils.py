@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
+from io import BytesIO
+from pydub import AudioSegment
 from ttts.utils.xtransformers import ContinuousTransformerWrapper, RelativePositionBias
 import glob
 import logging
@@ -30,7 +32,14 @@ def get_logger(model_dir, filename="train.log"):
 
 
 def load_audio(audiopath, sampling_rate):
-    audio, sr = torchaudio.load(audiopath)
+    if audiopath.endswith(".m4a"):
+        buffer = BytesIO()
+        sound = AudioSegment.from_file(audiopath)
+        sound.export(buffer, format="wav")
+        buffer.seek(0)
+        audio, sr = torchaudio.load(buffer)
+    else:
+        audio, sr = torchaudio.load(audiopath)
     # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
 
     if audio.size(0) > 1:  # mix to mono
