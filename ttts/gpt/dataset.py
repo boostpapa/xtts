@@ -41,7 +41,8 @@ class GptTTSDataset(torch.utils.data.Dataset):
             if len(strs) < 6:
                 return None
             # [language] + cleand_text
-            cleand_text = f"[{strs[3]}] {strs[5]}"
+            #cleand_text = f"[{strs[3]}] {strs[5]}"
+            cleand_text = strs[5]
             #print(f"cleand_text: {cleand_text}")
             seqid = self.tokenizer.encode(cleand_text)
             #print(f"seqid: {seqid}")
