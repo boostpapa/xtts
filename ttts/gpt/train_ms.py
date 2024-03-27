@@ -14,6 +14,7 @@ from torch import nn
 from torch.optim import AdamW
 from accelerate import Accelerator
 from ttts.utils.utils import AttrDict, get_logger
+from ttts.utils.lr_scheduler import CosineLRScheduler
 import argparse
 import logging
 
@@ -84,7 +85,7 @@ class Trainer(object):
             logging.warning("loading pretrain model: {}".format(model_pth))
             gpt_checkpoint = torch.load(model_pth, map_location=torch.device("cpu"))
             gpt_checkpoint = gpt_checkpoint['model'] if 'model' in gpt_checkpoint else gpt_checkpoint
-            self.gpt.load_state_dict(gpt_checkpoint, strict=False)
+            self.gpt.load_state_dict(gpt_checkpoint, strict=True)
             print(">> GPT weights restored from:", model_pth)
 
         # Load DVAE
@@ -112,7 +113,8 @@ class Trainer(object):
             num_warmup_step = self.cfg.train['warmup_steps']
             final_lr_ratio = self.min_lr / self.lr
 
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
+        #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
+        self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step, total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
         self.dvae.eval()
 

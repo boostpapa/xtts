@@ -46,7 +46,7 @@ class Trainer(object):
         json_config = json.load(open(args.config))
         self.cfg = AttrDict(json_config)
         self.train_dataset = PreprocessedMelDataset(self.cfg, self.cfg.dataset['training_files'])
-        self.eval_dataset = PreprocessedMelDataset(self.cfg,  self.cfgdataset['validation_files'], is_eval=True)
+        self.eval_dataset = PreprocessedMelDataset(self.cfg,  self.cfg.dataset['validation_files'], is_eval=True)
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader)
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader)
         self.train_steps = self.cfg.train['train_steps']
@@ -141,6 +141,7 @@ class Trainer(object):
         accelerator = self.accelerator
         device = self.accelerator.device
         if accelerator.is_main_process:
+            self.logger.info(self.cfg)
             writer = SummaryWriter(log_dir=self.model_dir)
             num_params = sum(p.numel() for p in self.vqvae.parameters())
             print('the number of vqvae model parameters: {:,d}'.format(num_params))
