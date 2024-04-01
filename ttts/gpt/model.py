@@ -343,7 +343,7 @@ class UnifiedVoice(nn.Module):
         elif condition_type == "gst":
             self.gst_encoder = GST(100, model_dim)
         else:
-            self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
+            self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads, mean=True)
 
         self.text_embedding = nn.Embedding(self.number_text_tokens*types+1, model_dim)
         if use_mel_codes_as_input:
@@ -476,11 +476,11 @@ class UnifiedVoice(nn.Module):
             if speech_conditioning_input.ndim == 4:
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
             speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
-            conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, d, 32)
+            conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, 32, d)
         elif self.condition_type == "gst":
             if speech_conditioning_input.ndim == 4:
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
-            conds = self.gst_encoder(speech_conditioning_input)
+            conds = self.gst_encoder(speech_conditioning_input)  # (b, 1, d)
         else:
             speech_conditioning_input = (
                 speech_conditioning_input.unsqueeze(1)
@@ -492,6 +492,7 @@ class UnifiedVoice(nn.Module):
                 conds.append(self.conditioning_encoder(speech_conditioning_input[:, j]))
             conds = torch.stack(conds, dim=1)
             conds = conds.mean(dim=1)
+            conds = conds.unsqueeze(1)
         return conds
 
     def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths,
@@ -537,10 +538,7 @@ class UnifiedVoice(nn.Module):
         text_inputs = F.pad(text_inputs, (0,1), value=self.stop_text_token)
         mel_codes = F.pad(mel_codes, (0,1), value=self.stop_mel_token)
 
-        if self.condition_type != "perceiver":
-            conds = speech_conditioning_latent.unsqueeze(1)
-        else:
-            conds = speech_conditioning_latent
+        conds = speech_conditioning_latent
         text_inputs, text_targets = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
         text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
         mel_codes, mel_targets = self.build_aligned_inputs_and_targets(mel_codes, self.start_mel_token, self.stop_mel_token)
@@ -583,10 +581,7 @@ class UnifiedVoice(nn.Module):
         text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
 
         speech_conditioning_latent = self.get_conditioning(speech_conditioning_latent)
-        if self.condition_type != "perceiver":
-            conds = speech_conditioning_latent.unsqueeze(1)
-        else:
-            conds = speech_conditioning_latent
+        conds = speech_conditioning_latent
         emb = torch.cat([conds, text_emb], dim=1)
         self.inference_model.store_mel_emb(emb)
 
