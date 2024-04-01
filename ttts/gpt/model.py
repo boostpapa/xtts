@@ -8,6 +8,7 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.utils.model_parallel_utils import get_device_map, assert_device_map
 from ttts.gpt.perceiver import PerceiverResampler
 from ttts.gpt.GST import GST
+from ttts.gpt.latent_encoder import ConformerEncoder
 from ttts.utils.utils import AttentionBlock
 from ttts.utils.typical_sampling import TypicalLogitsWarper
 
@@ -340,6 +341,11 @@ class UnifiedVoice(nn.Module):
         if condition_type == "perceiver":
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
+        elif condition_type == "conformer_perceiver":
+            self.conditioning_encoder = ConformerEncoder(input_size=100, output_size=512, linear_units=2048,
+                                                         num_attn_heads=8, num_blocks=6,
+                                                         input_layer="conv2d")
+            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=512, num_latents=self.cond_num)
         elif condition_type == "gst":
             self.gst_encoder = GST(100, model_dim)
         else:
