@@ -42,12 +42,12 @@ import logging
 logging.getLogger("numba").setLevel(logging.WARNING)
 
 
-def do_spectrogram_diffusion(diffusion_model, diffuser, latents, conditioning_latents, temperature=1, verbose=True):
+def do_spectrogram_diffusion(diffusion_model, diffuser, latents, conditioning_latents, upstride=4, temperature=1, verbose=True):
     """
     Uses the specified diffusion model to convert discrete codes into a spectrogram.
     """
     with torch.no_grad():
-        output_seq_len = latents.shape[2] * 4 # This diffusion model converts from 22kHz spectrogram codes to a 24kHz spectrogram signal.
+        output_seq_len = int(latents.shape[2] * upstride) # This diffusion model converts from 22kHz spectrogram codes to a 24kHz spectrogram signal.
         output_shape = (latents.shape[0], 100, output_seq_len)
 
         noise = torch.randn(output_shape, device=latents.device) * temperature
@@ -289,6 +289,7 @@ class Trainer(object):
             num_params = sum(p.numel() for p in self.gpt.parameters())
             print('the number of gpt model parameters: {:,d}'.format(num_params))
 
+            print(self.diffusion)
             num_params = sum(p.numel() for p in self.diffusion.parameters())
             print('the number of diffusion model parameters: {:,d}'.format(num_params))
 
