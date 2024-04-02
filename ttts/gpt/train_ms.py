@@ -200,6 +200,7 @@ class Trainer(object):
             self.logger.info(self.cfg)
             writer = SummaryWriter(log_dir=self.model_dir)
             num_params = sum(p.numel() for p in self.gpt.parameters())
+            print(self.gpt)
             print('the number of gpt model parameters: {:,d}'.format(num_params))
 
             self.logger.info("Initial Evaluating ...")

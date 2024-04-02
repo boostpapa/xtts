@@ -343,7 +343,7 @@ class UnifiedVoice(nn.Module):
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
         elif condition_type == "conformer_perceiver":
             self.conditioning_encoder = ConformerEncoder(input_size=100, output_size=512, linear_units=2048,
-                                                         num_attn_heads=8, num_blocks=6,
+                                                         attention_heads=8, num_blocks=6,
                                                          input_layer="conv2d")
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=512, num_latents=self.cond_num)
         elif condition_type == "gst":
@@ -483,10 +483,13 @@ class UnifiedVoice(nn.Module):
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
             speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
             conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, 32, d)
+        if self.condition_type == "conformer_perceiver":
+            speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input.transpose(1, 2))  # (b, s, d)
+            conds = self.perceiver_encoder(speech_conditioning_input)  # (b, 32, d)
         elif self.condition_type == "gst":
             if speech_conditioning_input.ndim == 4:
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
-            conds = self.gst_encoder(speech_conditioning_input)  # (b, 1, d)
+            conds = self.gst_encoder(speech_conditioning_input.transpose(1, 2))  # (b, 1, d)
         else:
             speech_conditioning_input = (
                 speech_conditioning_input.unsqueeze(1)

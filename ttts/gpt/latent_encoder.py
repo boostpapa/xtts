@@ -281,6 +281,7 @@ class BaseEncoder(torch.nn.Module):
         input_layer: str = "conv2d",
         pos_enc_layer_type: str = "abs_pos",
         normalize_before: bool = True,
+        concat_after: bool = False,
     ):
         """
         Args:
@@ -353,7 +354,7 @@ class BaseEncoder(torch.nn.Module):
     def forward(
         self,
         xs: torch.Tensor,
-        xs_lens: torch.Tensor,
+        xs_lens: torch.Tensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Embed positions in tensor.
 
@@ -375,6 +376,9 @@ class BaseEncoder(torch.nn.Module):
                 (B, 1, T' ~= T/subsample_rate)
         """
         T = xs.size(1)
+        B = xs.size(0)
+        # fake lengths
+        xs_lens = torch.full((B,), T)
         masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
         xs, pos_emb, masks = self.embed(xs, masks)
         #mask_pad = masks  # (B, 1, T/subsample_rate)
@@ -385,7 +389,7 @@ class BaseEncoder(torch.nn.Module):
         # Here we assume the mask is not changed in encoder layers, so just
         # return the masks before encoder layers, and the masks will be used
         # for cross attention with decoder later
-        return xs, masks
+        return xs
 
 
 class ConformerEncoder(BaseEncoder):
@@ -428,7 +432,7 @@ class ConformerEncoder(BaseEncoder):
                          input_layer, pos_enc_layer_type, normalize_before,
                          concat_after)
 
-        activation = torch.nn.SiLU
+        activation = torch.nn.SiLU()
         # relative_pos = True if pos_enc_layer_type == "rel_pos" else False
         relative_pos = False
 
