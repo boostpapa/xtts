@@ -177,7 +177,7 @@ class Trainer(object):
                 input_data = [d.to(device) for d in input_data]
                 # get vqvae codes from raw mel
                 input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                loss_text, loss_mel, mel_logits = model(*input_data)
+                loss_text, loss_mel, mel_logits = model(*input_data, cond_mel_lengths=batch['cond_mel_lengths'])
                 num_sample = input_data[0].shape[0]
                 #self.logger.info([loss_text, loss_mel])
                 text_losses += loss_text * num_sample
@@ -222,7 +222,7 @@ class Trainer(object):
                 with torch.no_grad():
                     input_data[3] = self.dvae.get_codebook_indices(input_data[3])
                 with accelerator.autocast():
-                    loss_text, loss_mel, mel_logits = self.gpt(*input_data)
+                    loss_text, loss_mel, mel_logits = self.gpt(*input_data, cond_mel_lengths=batch['cond_mel_lengths'])
                     loss = loss_text * self.text_loss_weight + loss_mel * self.mel_loss_weight
                     loss = loss / self.accum_grad
                 accelerator.backward(loss)

@@ -477,14 +477,14 @@ class UnifiedVoice(nn.Module):
         else:
             return first_logits
 
-    def get_conditioning(self, speech_conditioning_input):
+    def get_conditioning(self, speech_conditioning_input, cond_mel_lengths=None):
         if self.condition_type == "perceiver":
             if speech_conditioning_input.ndim == 4:
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
             speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
             conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, 32, d)
         if self.condition_type == "conformer_perceiver":
-            speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input.transpose(1, 2))  # (b, s, d)
+            speech_conditioning_input, mask = self.conditioning_encoder(speech_conditioning_input.transpose(1, 2), cond_mel_lengths)  # (b, s, d)
             conds = self.perceiver_encoder(speech_conditioning_input)  # (b, 32, d)
         elif self.condition_type == "gst":
             if speech_conditioning_input.ndim == 4:
@@ -505,7 +505,7 @@ class UnifiedVoice(nn.Module):
         return conds
 
     def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths,
-                types=None, text_first=True, raw_mels=None, return_attentions=False,
+                cond_mel_lengths=None, types=None, text_first=True, raw_mels=None, return_attentions=False,
                 return_latent=False, clip_inputs=False):
         """
         Forward pass that uses both text and voice in either text conditioning mode or voice conditioning mode
@@ -523,7 +523,7 @@ class UnifiedVoice(nn.Module):
         If clip_inputs is True, the inputs will be clipped to the smallest input size across each input modality.
         """
 
-        speech_conditioning_latent = self.get_conditioning(speech_conditioning_latent)
+        speech_conditioning_latent = self.get_conditioning(speech_conditioning_latent, cond_mel_lengths)
         # Types are expressed by expanding the text embedding space.
         if types is not None:
             text_inputs = text_inputs * (1+types).unsqueeze(-1)

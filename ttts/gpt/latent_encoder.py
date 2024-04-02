@@ -6,6 +6,7 @@ import torch.nn as nn
 from ttts.utils.utils import AttentionBlock
 from ttts.gpt.subsampling import Conv2dSubsampling4, Conv2dSubsampling6, Conv2dSubsampling8, LinearNoSubsampling
 from ttts.gpt.embedding import PositionalEncoding, RelPositionalEncoding, NoPositionalEncoding
+from ttts.gpt.attention import MultiHeadedAttention, RelPositionMultiHeadedAttention
 from ttts.utils.utils import make_pad_mask
 import torch.nn.functional as F
 
@@ -202,8 +203,11 @@ class ConformerEncoderLayer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: torch.Tensor = None,
+        mask: torch.Tensor,
+        pos_emb: torch.Tensor,
         mask_pad: torch.Tensor = torch.ones((0, 0, 0), dtype=torch.bool),
+        att_cache: torch.Tensor = torch.zeros((0, 0, 0, 0)),
+        cnn_cache: torch.Tensor = torch.zeros((0, 0, 0, 0)),
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute encoded features.
 
@@ -214,9 +218,17 @@ class ConformerEncoderLayer(nn.Module):
             pos_emb (torch.Tensor): positional encoding, must not be None
                 for ConformerEncoderLayer.
             mask_pad (torch.Tensor): batch padding mask used for conv module.
+                (#batch, 1，time), (0, 0, 0) means fake mask.
+            att_cache (torch.Tensor): Cache tensor of the KEY & VALUE
+                (#batch=1, head, cache_t1, d_k * 2), head * d_k == size.
+            cnn_cache (torch.Tensor): Convolution cache in conformer layer
+                (#batch=1, size, cache_t2)
         Returns:
             torch.Tensor: Output tensor (#batch, time, size).
             torch.Tensor: Mask tensor (#batch, time, time).
+            torch.Tensor: att_cache tensor,
+                (#batch=1, head, cache_t1 + time, d_k * 2).
+            torch.Tensor: cnn_cahce tensor (#batch, size, cache_t2).
         """
 
         # whether to use macaron style
@@ -234,7 +246,8 @@ class ConformerEncoderLayer(nn.Module):
         if self.normalize_before:
             x = self.norm_mha(x)
 
-        x_att = self.self_attn(x, mask)
+        x_att, new_att_cache = self.self_attn(
+            x, x, x, mask, pos_emb, att_cache)
         if self.concat_after:
             x_concat = torch.cat((x, x_att), dim=-1)
             x = residual + self.concat_linear(x_concat)
@@ -244,11 +257,13 @@ class ConformerEncoderLayer(nn.Module):
             x = self.norm_mha(x)
 
         # convolution module
+        # Fake new cnn cache here, and then change it in conv_module
+        new_cnn_cache = torch.zeros((0, 0, 0), dtype=x.dtype, device=x.device)
         if self.conv_module is not None:
             residual = x
             if self.normalize_before:
                 x = self.norm_conv(x)
-            x = self.conv_module(x, mask_pad)
+            x, new_cnn_cache = self.conv_module(x, mask_pad, cnn_cache)
             x = residual + self.dropout(x)
 
             if not self.normalize_before:
@@ -266,7 +281,7 @@ class ConformerEncoderLayer(nn.Module):
         if self.conv_module is not None:
             x = self.norm_final(x)
 
-        return x
+        return x, mask, new_att_cache, new_cnn_cache
 
 
 class BaseEncoder(torch.nn.Module):
@@ -354,7 +369,7 @@ class BaseEncoder(torch.nn.Module):
     def forward(
         self,
         xs: torch.Tensor,
-        xs_lens: torch.Tensor = None,
+        xs_lens: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Embed positions in tensor.
 
@@ -376,20 +391,18 @@ class BaseEncoder(torch.nn.Module):
                 (B, 1, T' ~= T/subsample_rate)
         """
         T = xs.size(1)
-        B = xs.size(0)
-        # fake lengths
-        xs_lens = torch.full((B,), T)
         masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
         xs, pos_emb, masks = self.embed(xs, masks)
-        #mask_pad = masks  # (B, 1, T/subsample_rate)
+        chunk_masks = masks
+        mask_pad = masks  # (B, 1, T/subsample_rate)
         for layer in self.encoders:
-            xs = layer(xs)
+            xs, chunk_masks, _, _ = layer(xs, chunk_masks, pos_emb, mask_pad)
         if self.normalize_before:
             xs = self.after_norm(xs)
         # Here we assume the mask is not changed in encoder layers, so just
         # return the masks before encoder layers, and the masks will be used
         # for cross attention with decoder later
-        return xs
+        return xs, masks
 
 
 class ConformerEncoder(BaseEncoder):
@@ -433,8 +446,17 @@ class ConformerEncoder(BaseEncoder):
                          concat_after)
 
         activation = torch.nn.SiLU()
-        # relative_pos = True if pos_enc_layer_type == "rel_pos" else False
-        relative_pos = False
+
+        # self-attention module definition
+        if pos_enc_layer_type != "rel_pos":
+            encoder_selfattn_layer = MultiHeadedAttention
+        else:
+            encoder_selfattn_layer = RelPositionMultiHeadedAttention
+        encoder_selfattn_layer_args = (
+            attention_heads,
+            output_size,
+            dropout_rate,
+        )
 
         # feed-forward module definition
         positionwise_layer = PositionwiseFeedForward
@@ -453,9 +475,7 @@ class ConformerEncoder(BaseEncoder):
         self.encoders = torch.nn.ModuleList([
             ConformerEncoderLayer(
                 output_size,
-                AttentionBlock(channels=output_size,
-                               num_heads=attention_heads,
-                               relative_pos_embeddings=relative_pos),
+                encoder_selfattn_layer(*encoder_selfattn_layer_args),
                 positionwise_layer(*positionwise_layer_args),
                 positionwise_layer(
                     *positionwise_layer_args) if macaron_style else None,
