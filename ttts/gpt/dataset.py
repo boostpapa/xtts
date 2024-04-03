@@ -58,7 +58,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             else:
                 cleand_text = strs[4]
                 # cleand_text = f"[{strs[3]}] {cleand_text}"
-                cleand_text = byte_encode(tokenize_by_CJK_char(cleand_text.lower()))
+                cleand_text = byte_encode(tokenize_by_CJK_char(cleand_text))
             # print(f"cleand_text: {cleand_text}")
             seqid = self.tokenizer.encode(cleand_text)
             #print(f"seqid: {seqid}")
