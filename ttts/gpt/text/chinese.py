@@ -92,6 +92,52 @@ def replace_punctuation(text):
     return replaced_text
 
 
+def _is_all_chinese(strs):
+    for _char in strs:
+        if not '\u4e00' <= _char <= '\u9fa5':
+            return False
+    return True
+
+
+def _is_all_punc(strs):
+    punc = "".join(punctuation)
+    for c in strs:
+        if c not in punc:
+            return False
+    return True
+
+
+def _split_cn_en(str):
+    english = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    output = []
+    buffer = ''
+    for s in str:
+        if s in english or s in english.upper():
+            buffer += s
+        else:
+            if buffer:
+                output.append(buffer)
+            buffer = ''
+            s = s.strip()
+            if s:
+                output.append(s)
+    if buffer:
+        output.append(buffer)
+    return output
+
+
+def split_cn_en(seg_cut):
+    segs = []
+    for seg in seg_cut:
+        if _is_all_chinese(seg[0]) or seg[0].encode('utf-8').isalpha() or _is_all_punc(seg[0]):
+            segs.append(seg)
+            continue
+        lsegs = _split_cn_en(seg[0])
+        for s in lsegs:
+            segs.append([s, seg[1]])
+    return segs
+
+
 def g2w(text):
     pattern = r"(?<=[{0}])\s*".format("".join(punctuation))
     sentences = [i for i in re.split(pattern, text) if i.strip() != ""]
