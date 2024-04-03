@@ -7,7 +7,7 @@ from pypinyin import lazy_pinyin, Style
 from ttts.gpt.text.symbols import punctuation
 from ttts.gpt.text.tone_sandhi import ToneSandhi
 #from tn.chinese.normalizer import Normalizer
-from .zh_normalization.text_normlization import TextNormalizer
+from ttts.gpt.text.zh_normalization.text_normlization import TextNormalizer
 
 current_file_path = os.path.dirname(__file__)
 pinyin_to_symbol_map = {
@@ -240,6 +240,7 @@ def text_normalize(text):
     #text = cn2an.transform(text, "an2cn")
     text = an2cn_normalizer.normalize_sentence(text)
     text = replace_punctuation(text)
+    text = re.sub(r"([,;.\?\!])([\w])", r"\1 \2", text)
     return text
 
 
@@ -266,8 +267,8 @@ if __name__ == "__main__":
     text = "TA TA T"
     text = "剩了 一些 茶卤儿 ，留着 过年吧 。年夜饭的 剩菜 干一干 可香啦 。"
     text = "气球给你们， 别抢我 switch"
-    text = "G P 是吧U显卡 RTX GPU 4080, 啊！但是《原神》是由,米哈\游自主，  … 猪头- !?[研发]的一款全.新开放世界.冒险游戏"
     text = "呣呣呣～就是…大人的鼹鼠党吧？"
+    text = "G P 是吧?U显卡 RTX GPU 4080, 啊！但是《原神》是由,米哈\游自主，  … 猪头- !?[研发]的一款全.新开放世界.冒险游戏"
     print(text)
     text = text_normalize(text)
     print(text)
