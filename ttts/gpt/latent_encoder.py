@@ -4,7 +4,8 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 from ttts.utils.utils import AttentionBlock
-from ttts.gpt.subsampling import Conv2dSubsampling4, Conv2dSubsampling6, Conv2dSubsampling8, LinearNoSubsampling
+from ttts.gpt.subsampling import Conv2dSubsampling4, Conv2dSubsampling6, \
+    Conv2dSubsampling8, LinearNoSubsampling, Conv2dSubsampling2
 from ttts.gpt.embedding import PositionalEncoding, RelPositionalEncoding, NoPositionalEncoding
 from ttts.gpt.attention import MultiHeadedAttention, RelPositionMultiHeadedAttention
 from ttts.utils.utils import make_pad_mask
@@ -364,6 +365,8 @@ class BaseEncoder(torch.nn.Module):
 
         if input_layer == "linear":
             subsampling_class = LinearNoSubsampling
+        elif input_layer == "conv2d2":
+            subsampling_class = Conv2dSubsampling2
         elif input_layer == "conv2d":
             subsampling_class = Conv2dSubsampling4
         elif input_layer == "conv2d6":
@@ -439,7 +442,7 @@ class ConformerEncoder(BaseEncoder):
         pos_enc_layer_type: str = "rel_pos",
         normalize_before: bool = True,
         concat_after: bool = False,
-        macaron_style: bool = True,
+        macaron_style: bool = False,
         use_cnn_module: bool = True,
         cnn_module_kernel: int = 15,
     ):
