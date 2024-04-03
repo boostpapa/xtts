@@ -9,6 +9,9 @@ from torch import LongTensor
 from tqdm import tqdm
 import torchaudio
 from collections import defaultdict
+import sentencepiece as spm
+from ttts.utils.byte_utils import byte_encode
+from ttts.utils.utils import tokenize_by_CJK_char
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
@@ -17,7 +20,13 @@ from ttts.utils.utils import AttrDict, load_audio, get_prompt_slice, get_logger
 
 class GptTTSDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
-        self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+        if 'gpt_vocab' in cfg.dataset:
+            self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+            self.use_spm = False
+        else:
+            self.tokenizer = spm.SentencePieceProcessor()
+            self.tokenizer.load(cfg.dataset['bpe_model'])
+            self.use_spm = True
         self.datalist = []
         self.spk2wav = defaultdict(list)
         with open(datafile, 'r', encoding='utf8') as fin:
@@ -37,13 +46,20 @@ class GptTTSDataset(torch.utils.data.Dataset):
             # Fetch text and add start/stop tokens.
             line = self.datalist[index]
             #key, wav_path, spkid, language, raw_text, cleand_text
+            # key, wav_path, spkid, language, raw_text
             strs = line.strip().split("|")
-            if len(strs) < 6:
+            if (self.use_spm and len(strs) < 5) or (not self.use_spm and len(strs) < 6):
                 return None
-            # [language] + cleand_text
-            #cleand_text = f"[{strs[3]}] {strs[5]}"
-            cleand_text = strs[5]
-            #print(f"cleand_text: {cleand_text}")
+
+            if not self.use_spm:
+                cleand_text = strs[5]
+                # [language] + cleand_text
+                # cleand_text = f"[{strs[3]}] {cleand_text}"
+            else:
+                cleand_text = strs[4]
+                # cleand_text = f"[{strs[3]}] {cleand_text}"
+                cleand_text = byte_encode(tokenize_by_CJK_char(cleand_text.lower()))
+            # print(f"cleand_text: {cleand_text}")
             seqid = self.tokenizer.encode(cleand_text)
             #print(f"seqid: {seqid}")
             text = LongTensor(seqid)
