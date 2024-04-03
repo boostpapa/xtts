@@ -338,6 +338,7 @@ class UnifiedVoice(nn.Module):
         self.mel_length_compression = mel_length_compression
         self.condition_type = condition_type
         self.cond_num = 32
+        self.cond_mask_pad = nn.ConstantPad1d((self.cond_num, 0), True)
         if condition_type == "perceiver":
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
@@ -483,9 +484,11 @@ class UnifiedVoice(nn.Module):
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
             speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
             conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, 32, d)
-        if self.condition_type == "conformer_perceiver":
+        elif self.condition_type == "conformer_perceiver":
             speech_conditioning_input, mask = self.conditioning_encoder(speech_conditioning_input.transpose(1, 2), cond_mel_lengths)  # (b, s, d)
-            conds = self.perceiver_encoder(speech_conditioning_input)  # (b, 32, d)
+            #conds_mask = torch.cat([torch.ones((mask.shape[0], self.cond_num), dtype=torch.bool), mask.squeeze(1)], dim=1)
+            conds_mask = self.cond_mask_pad(mask.squeeze(1))
+            conds = self.perceiver_encoder(speech_conditioning_input, conds_mask)  # (b, 32, d)
         elif self.condition_type == "gst":
             if speech_conditioning_input.ndim == 4:
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
