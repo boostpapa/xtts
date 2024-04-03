@@ -8,7 +8,7 @@ from functools import partial
 
 from tqdm import tqdm
 import click
-from ttts.gpt.text.cleaner import clean_text1
+from ttts.gpt.text.cleaner import clean_text1, text_normalize
 
 cleaned_text = []
 cleaned_file_path = "data/all.txt.cleaned"
@@ -32,17 +32,27 @@ def callback(line):
             flag = "a+"
 
 
-def process_line(line):
+def process_line(line, type):
     try:
         key, wav, spk, language, text = line.strip().split("|")
-        norm_text, phones = clean_text1(text, language)
-        cleaned_line = "{}|{}|{}|{}|{}|{}\n".format(
+        if type == "clean":
+            norm_text, phones = clean_text1(text, language)
+            cleaned_line = "{}|{}|{}|{}|{}|{}\n".format(
+                    key,
+                    wav,
+                    spk,
+                    language,
+                    norm_text,
+                    " ".join(phones),
+                )
+        elif type == "norm":
+            norm_text = text_normalize(text, language)
+            cleaned_line = "{}|{}|{}|{}|{}\n".format(
                 key,
                 wav,
                 spk,
                 language,
                 norm_text,
-                " ".join(phones),
             )
         #print(cleaned_line, end="")
         return cleaned_line
@@ -71,6 +81,7 @@ def multiplication(num):
 @click.option("--max-val-total", default=2000)
 @click.option("--clean/--no-clean", default=True)
 @click.option("--num-processes", default=5)
+@click.option("--type", default="clean")  #clean|norm
 def preprocess(
     transcription_path: str,
     cleaned_path: Optional[str],
@@ -80,6 +91,7 @@ def preprocess(
     max_val_total: int,
     clean: bool,
     num_processes: int,
+    type: str,
 ):
     global cleaned_text
     global cleaned_file_path
@@ -100,11 +112,11 @@ def preprocess(
             if num_processes == 1:
                 with open(cleaned_path, "w", encoding="utf-8") as out_file:
                     for line in tqdm(trans_file):
-                        cleaned_line = process_line(line)
+                        cleaned_line = process_line(line, type)
                         out_file.write(cleaned_line)
             else:
                 for line in tqdm(trans_file):
-                    pool.apply_async(func=process_line, args=(line,), callback=callback)
+                    pool.apply_async(func=process_line, args=(line, type,), callback=callback)
                 pool.close()
                 pool.join()
                 with open(cleaned_path, flag, encoding="utf-8") as out_file:

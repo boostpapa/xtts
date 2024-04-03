@@ -19,6 +19,7 @@ def clean_text(text, language):
 
 
 def text_normalize(text, language):
+    language_module = language_module_map[language]
     norm_text = language_module.text_normalize(text)
     return norm_text
 
