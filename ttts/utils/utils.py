@@ -83,6 +83,31 @@ def get_prompt_slice(audio, max_audio_length=20, min_audio_length=3, sample_rate
     return rel_clip
 
 
+def tokenize_by_CJK_char(line: str) -> str: 
+    """  
+    Tokenize a line of text with CJK char.
+
+    Note: All return charaters will be upper case.
+
+    Example:                                                                                                                                                                                                                                                                    
+      input = "你好世界是 hello world 的中文"
+      output = "你 好 世 界 是 HELLO WORLD 的 中 文"
+
+    Args:
+      line:
+        The input text.
+
+    Return:
+      A new string tokenize by CJK char.
+    """
+    # The CJK ranges is from https://github.com/alvations/nltk/blob/79eed6ddea0d0a2c212c1060b477fc268fec4d4b/nltk/tokenize/util.py
+    pattern = re.compile(
+        r"([\u1100-\u11ff\u2e80-\ua4cf\ua840-\uD7AF\uF900-\uFAFF\uFE30-\uFE4F\uFF65-\uFFDC\U00020000-\U0002FFFF])"
+    )    
+    chars = pattern.split(line.strip().upper())
+    return " ".join([w.strip() for w in chars if w.strip()])
+
+
 def make_pad_mask(lengths: torch.Tensor, max_len: int = 0) -> torch.Tensor:
     """Make mask tensor containing indices of padded part.
 
@@ -129,6 +154,8 @@ def get_paths_with_cache(search_path, cache_path=None):
             print("Building cache..")
             torch.save(out_paths, cache_path)
     return out_paths
+
+
 def find_audio_files(folder_path, suffixes):
     files = []
     for suffix in suffixes:
