@@ -18,6 +18,11 @@ def clean_text(text, language):
     return norm_text, phones
 
 
+def text_normalize(text, language):
+    norm_text = language_module.text_normalize(text)
+    return norm_text
+
+
 def text_to_sequence(text, language):
     norm_text, phones = clean_text(text, language)
     return cleaned_text_to_sequence(phones, language)
