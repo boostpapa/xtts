@@ -134,7 +134,11 @@ def preprocess(
         countSame = 0
         countNotFound = 0
         for line in f.readlines():
-            key, wav, spk, language, text, phones = line.strip().split("|")
+            if type == "clean":
+                key, wav, spk, language, text, phones = line.strip().split("|")
+            elif type == "norm":
+                key, wav, spk, language, text = line.strip().split("|")
+
             if wav in audioPaths:
                 # 过滤数据集错误：相同的音频匹配多个文本，导致后续bert出问题
                 print(f"重复音频文本：{line}")
