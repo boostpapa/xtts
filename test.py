@@ -5,18 +5,20 @@ import numpy as np
 from omegaconf import OmegaConf
 from ttts.gpt.model import UnifiedVoice
 from ttts.vqvae.xtts_dvae import DiscreteVAE
-from ttts.gpt.text.cleaner import clean_text1
+from ttts.gpt.text.cleaner import clean_text1, text_normalize
 
+    #'diffusion.pth': '/speechwork/users/wd007/tts/xtts2/diffusion/s2_v3/exp/baseline_mrte1_nolangid/epoch_5.pth',
+    #'diffusion.pth': '/speechwork/users/wd007/tts/xtts2/diffusion/s2_v4/exp/baseline_nolangid_mrte/epoch_4.pth',
 MODELS = {
     'vqvae.pth':'/speechwork/users/wd007/tts/xtts2/vqvae/s4/exp/baseline_lossl1_ssim1/epoch_19.pth',
     'gpt.pth': '/speechwork/users/wd007/tts/xtts2/gpt/s2_v2/exp/baseline_noe_ignore/epoch_0.pth',
+    'diffusion.pth': '/speechwork/users/wd007/tts/xtts2/diffusion/s2_v3/exp/baseline_mrte1_nolangid/epoch_5.pth',
     'clvp2.pth': '',
-    'diffusion.pth': '/speechwork/users/wd007/tts/xtts2/diffusion/s2_v3/exp/baseline_mrte_clip1/epoch_2.pth',
     'vocoder.pth': 'model/pytorch_model.bin',
     'rlg_auto.pth': '',
     'rlg_diffuser.pth': '',
 }
-device = 'cuda:2'
+device = 'cuda:0'
 
 
 
@@ -24,7 +26,7 @@ from ttts.utils.infer_utils import load_model
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 import torchaudio
 
-config='/speechwork/users/wd007/tts/xtts2/diffusion/s2_v2/configs/config_test_v2.yaml'
+config='/speechwork/users/wd007/tts/xtts2/diffusion/s2_v3/configs/config_test_v2.yaml'
 cfg = OmegaConf.load(config)
 
 ## load gpt model ##
@@ -44,26 +46,35 @@ dvae_path = cfg.dvae_checkpoint
 dvae_checkpoint = torch.load(dvae_path, map_location=device)
 if 'model' in dvae_checkpoint:
     dvae_checkpoint = dvae_checkpoint['model']
-dvae.load_state_dict(dvae_checkpoint, strict=False)
+dvae.load_state_dict(dvae_checkpoint, strict=True)
 dvae = dvae.to(device)
 dvae.eval()
 print(">> vqvae weights restored from:", dvae_path)
 
-cond_audio = '/cfs/import/tts/opensource/baker_BZNSYP/BZNSYP/Wave_22k/008669.wav'
-cond_audio = '/speechwork/users/wd007/tts/yourtts/zhibo/live_audio2/wavs/live_audio2_741.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei.wav'
-cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xueli.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
-cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/live_audio2_57.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xueli.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/guzong.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xialiu-chuanpu.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/5639-40744-0020.wav'
+cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei1.wav'
+cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/taylor1.wav'
 cond_audio = '/cfs/import/tts/opensource/baker_BZNSYP/BZNSYP/Wave_22k/003261.wav'
+cond_audio = '/cfs/import/tts/opensource/LJSpeech/LJSpeech-1.1/wavs/LJ002-0145.wav'
+cond_audio = '/speechwork/users/wd007/tts/yourtts/zhibo/live_audio2/wavs/live_audio2_741.wav'
+cond_audio = '/cfs/import/tts/opensource/baker_BZNSYP/BZNSYP/Wave_22k/008669.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/shujuan.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
+cond_audio = '/cfs/import/tts/opensource/LJSpeech/LJSpeech-1.1/wavs/LJ002-0145.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/22all/22/speak/ZH/wav/22-all_speak_ZH_YouYou_emotion_ZH_309自豪_20230613_20230627-0150729-0155966.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
+cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/live_audio2_57.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/split2_J5_TTS_女性_愤怒_4.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/jiachun/jiachun/speak/ZH/wav/00000001_000019.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/chenrui1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/010100010068.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/shujuan.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
+
 audio,sr = torchaudio.load(cond_audio)
 if audio.shape[0]>1:
     audio = audio[0].unsqueeze(0)
@@ -77,7 +88,7 @@ settings = {'temperature': .8, 'length_penalty': 1.0, 'repetition_penalty': 2.0,
                     'top_p': .8,
                     'cond_free_k': 2.0, 'diffusion_temperature': 1.0}
 
-from ttts.diffusion.train import do_spectrogram_diffusion
+from ttts.diffusion.train_ms import do_spectrogram_diffusion
 from ttts.utils.diffusion import SpacedDiffusion, space_timesteps, get_named_beta_schedule
 from ttts.diffusion.aa_model import denormalize_tacotron_mel, normalize_tacotron_mel
 
@@ -85,8 +96,17 @@ from vocos import Vocos
 vocos = Vocos.from_pretrained("/speechwork/users/wd007/tts/xtts2/model/charactr/vocos-mel-24khz")
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
+import sentencepiece as spm
+from ttts.utils.byte_utils import byte_encode
+from ttts.utils.utils import tokenize_by_CJK_char
 import torch.nn.functional as F
-tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+if 'gpt_vocab' in cfg.dataset:
+    tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+    use_spm = False
+else:
+    tokenizer = spm.SentencePieceProcessor()
+    tokenizer.load(cfg.dataset['bpe_model'])
+    use_spm = True
 
 diffusion = load_model('diffusion', MODELS['diffusion.pth'], config, device)
 diffuser = SpacedDiffusion(use_timesteps=space_timesteps(1000, [50]), model_mean_type='epsilon',
@@ -99,11 +119,19 @@ text = "历史将永远记住同志们的杰出创造和奉献，党和人民感
 text = "但我们的损失由谁来补?"
 text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划."
 text = "玥玥爱土豆，爱爸爸妈妈，爱奶奶，喜欢去迪斯尼玩，喜欢癞蛤蟆"
-text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划.如果大家时间都 ok 的话,就安排在今天下午 review 了.然后可能得辛苦 harry 老师帮忙组织一下团建的事,嗯也不知道安排怎么样了,今天下午我要放假了,接下来一周就不在公司,大家新年快乐!"
-text = "武士狐媚,我来世一定要身为一只猫."
+text = "traced the progress of prison architecture from the days when the jail was the mere annexe of the baronial or episcopal castle"
+text = "二零一九年前后, 媒体报道了重刑犯出狱后从事殡葬行业的新闻, 这些新闻让殡葬师这个事业引发了一波关注"
+text = "Then leaving the corpse within the house they go themselves to and fro about the city and beat themselves, with their garments bound up by a girdle."
+text = "Thus did this humane and right minded father comfort his unhappy daughter, and her mother embracing her again, did all she could to soothe her feelings."
 text = "天空上，火幕蔓延而开，将方圆数以千万计的人类尽数笼罩。而在火幕扩散时，那绚丽火焰之中的人影也是越来越清晰，片刻后，火焰减弱而下，一道黑衫身影，便是清楚的出现在了这片天地之间。"
+text = "once upon a time, there lived in a certain village. a little country girl, the prettiest creature who was ever seen. her mother was accessibly fond of her and her grandmother doted on her still more."
+text = "武士狐媚,我来世一定要身为一只猫."
+text = "是谁给你的胆量这么跟我说话，嗯？是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
+text = "天空上，火幕蔓延而开，将方圆数以千万计的人类尽数笼罩。而在火幕扩散时，那绚丽火焰之中的人影也是越来越清晰。片刻后，火焰减弱而下，一道黑衫身影，便是清楚的出现在了这片天地之间。真的是萧炎…，在联盟总部不远处的一处，大量的人群簇拥在一起，看这模样，显然都是属于同一个势力。而此刻，在那人群之中，一道身形壮硕的男子，正抬起头，目光火热的望着天空上那道身影，声音中，透着浓浓的兴奋。柳擎大哥，真的是他？在男子身后，一名容貌娇美的女子，也是忍不住的道，谁能想到，短短十数年时间不见而已，当年同在迦南学院修炼的学弟，竟然已站在了这个大陆的真正巅峰。"
 text = "接下来给大家介绍一个团购产品--深圳绿景酒店1晚加双人下午茶。首先，让我们来看看这个团购的价格,这个团购包含的房间门市价是每晚1888元，直播间售价1晚住宿加其他项目只需要1618元。接下来，我们来详细介绍一下这个团购的各个项目。首先是住宿项目，房型有高级双床房或高级大床房，可任选其中一个房型。这两种房型都有38平米的面积，位于8-12层，视野开阔，房间内有窗户，可以欣赏室外的城景或花园景,无论是商务出差还是休闲旅游，都能满足您的需求。其次是双人下午茶项目，这个项目包含了精美的下午茶套餐，让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
+text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划.如果大家时间都 ok 的话,就安排在今天下午 review 了.然后可能得辛苦 harry 老师帮忙组织一下团建的事,嗯也不知道安排怎么样了,今天下午我要放假了,接下来一周就不在公司,大家新年快乐!"
 text = "其次是双人下午茶项目，这个项目包含了精美的下午茶套餐, 让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
+text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, Open-Sora not only democratizes access to advanced video generation techniques, but also offers a streamlined and user-friendly platform that simplifies the complexities of video production. With Open-Sora, we aim to inspire innovation, creativity, and inclusivity in the realm of content creation."
 text = "千万别被剑角龙顶到，剑角龙又名顶角龙，意为有角的头顶，顾名思义它的头上长了一个头盔。你可不要被它名字迷惑，它不是角龙，而是生活在白垩纪晚期的肿头龙家族中的一员"
 
 '''
@@ -122,26 +150,34 @@ sentences = [i for i in re.split(pattern, text) if i.strip() != ""]
 print(sentences)
 
 top_p = .8
-top_k = 20
-temperature = 1.5
+top_k = 30
+temperature = 1
 autoregressive_batch_size = 1
 length_penalty = 0.0
-num_beams = 5
-repetition_penalty = 10.0
+num_beams = 3
+repetition_penalty = 15.0
 max_mel_tokens = 600
 sampling_rate = 24000
+lang = "EN"
 lang = "ZH"
 # text_tokens = F.pad(text_tokens,(0,400-text_tokens.shape[1]),value=0)
 wavs = []
 wavs1 = []
-zero_wav = torch.zeros(1, int(sampling_rate*0.15))
+zero_wav = torch.zeros(1, int(sampling_rate*0.2))
 for sent in sentences:
     sent = sent.strip().lower()
     print(sent)
     #pinyin = ' '.join(lazy_pinyin(sent, style=Style.TONE3, neutral_tone_with_five=True))
-    norm_text, words = clean_text1(sent, lang)
-    #cleand_text = f"[{lang}] {' '.join(words)}"
-    cleand_text = ' '.join(words)
+    if not use_spm:
+        norm_text, words = clean_text1(sent, lang)
+        cleand_text = ' '.join(words)
+        #cleand_text = f"[{lang}] {cleand_text}"
+    else:
+        norm_text = text_normalize(sent, lang)
+        cleand_text = norm_text
+        #cleand_text = f"[{lang}] {cleand_text}"
+        cleand_text = byte_encode(tokenize_by_CJK_char(cleand_text))
+        
     print(cleand_text)
     text_tokens = torch.IntTensor(tokenizer.encode(cleand_text)).unsqueeze(0).to(device)
     text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
@@ -168,8 +204,8 @@ for sent in sentences:
         mel1, _ = dvae.decode(codes)
         wav1 = vocos.decode(mel1.detach().cpu())
         #torchaudio.save('gen1.wav',wav1.detach().cpu(), 24000)
-        #wav1 = 32767 / max(0.01, torch.max(torch.abs(wav1))) * 0.7 * wav1.detach()
-        #torch.clip(wav1, -32767.0, 32767.0)
+        wav1 = 32767 / max(0.01, torch.max(torch.abs(wav1))) * 0.8 * wav1.detach()
+        torch.clip(wav1, -32767.0, 32767.0)
         wavs1.append(wav1)
 
         latent = gpt(auto_conditioning, text_tokens,
@@ -178,12 +214,13 @@ for sent in sentences:
                     return_latent=True, clip_inputs=False).transpose(1,2)
         print(latent.shape)
 
-        mel = do_spectrogram_diffusion(diffusion, diffuser, latent, diffusion_conditioning, temperature=1.0).detach().cpu()
+        upstride = gpt.mel_length_compression/256
+        mel = do_spectrogram_diffusion(diffusion, diffuser, latent, diffusion_conditioning, upstride, temperature=1.0).detach().cpu()
         wav = vocos.decode(mel)
-        wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 0.7 * wav.detach()
+        wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 0.8 * wav.detach()
         torch.clip(wav, -32767.0, 32767.0)
         wavs.append(wav)
-        #wavs.append(zero_wav)
+        wavs.append(zero_wav)
 
 
 #from IPython.display import Audio
@@ -196,8 +233,8 @@ wavfile.write('gen.wav', 24000, wav.astype(np.int16))
 '''
 
 wav1 = torch.cat(wavs1, dim=1)
-#torchaudio.save('gen1.wav', wav1.type(torch.int16), 24000)
-torchaudio.save('gen1.wav', wav1, 24000)
+torchaudio.save('gen1.wav', wav1.type(torch.int16), 24000)
+#torchaudio.save('gen1.wav', wav1, 24000)
 
 wav = torch.cat(wavs, dim=1)
 torchaudio.save('gen.wav', wav.type(torch.int16), 24000)
