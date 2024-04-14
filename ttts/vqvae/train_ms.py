@@ -7,7 +7,7 @@ from tqdm import tqdm
 from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, summarize, update_moving_average
 from ttts.utils.utils import get_logger
 from ttts.utils.checkpoint import load_trained_modules
-from ttts.vqvae.dataset import PreprocessedMelDataset
+from ttts.vqvae.dataset import PreprocessedMelDataset, MelCollater
 import torch
 import os
 from torch.utils.data import DataLoader
@@ -47,8 +47,8 @@ class Trainer(object):
         self.cfg = AttrDict(json_config)
         self.train_dataset = PreprocessedMelDataset(self.cfg, self.cfg.dataset['training_files'])
         self.eval_dataset = PreprocessedMelDataset(self.cfg,  self.cfg.dataset['validation_files'], is_eval=True)
-        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader)
-        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader)
+        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=MelCollater(self.cfg))
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader, collate_fn=MelCollater(self.cfg))
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
         self.log_interval = self.cfg.train['log_interval']

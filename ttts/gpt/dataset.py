@@ -89,6 +89,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             cond_wave_clip = get_prompt_slice(cond_wave, 15, 3, self.sample_rate, self.is_eval)
             cond_mel = self.mel_extractor(cond_wave_clip)[0]
         except:
+            print(f"Warning: {wav_path} processing error, skip!")
             return None
 
         if text.shape[0] > 300 or raw_mel.shape[1] > 2400:
