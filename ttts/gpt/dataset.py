@@ -57,8 +57,10 @@ class GptTTSDataset(torch.utils.data.Dataset):
                 # cleand_text = f"[{strs[3]}] {cleand_text}"
             else:
                 cleand_text = strs[4]
+                cleand_text = tokenize_by_CJK_char(cleand_text)
                 # cleand_text = f"[{strs[3]}] {cleand_text}"
-                cleand_text = byte_encode(tokenize_by_CJK_char(cleand_text))
+                #cleand_text = cleand_text.replace(' ', '[SPACE]')
+                cleand_text = byte_encode(cleand_text)
             # print(f"cleand_text: {cleand_text}")
             seqid = self.tokenizer.encode(cleand_text)
             #print(f"seqid: {seqid}")
@@ -71,6 +73,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
 
             wave = load_audio(wav_path, self.sample_rate)
             if wave is None:
+                print(f"Warning: {wav_path} loading error, skip!")
                 return None
             mel = self.mel_extractor(wave)[0]
             wav_length = mel.shape[1] * 256
@@ -81,6 +84,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             cond_wave = load_audio(cond_wav_path, self.sample_rate)
             #cond_wave = wave
             if cond_wave is None:
+                print(f"Warning: {wav_path} loading error, skip!")
                 return None
             cond_wave_clip = get_prompt_slice(cond_wave, 15, 3, self.sample_rate, self.is_eval)
             cond_mel = self.mel_extractor(cond_wave_clip)[0]

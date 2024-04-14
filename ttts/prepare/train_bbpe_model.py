@@ -80,6 +80,7 @@ def main():
     input_sentence_size = 100000000
 
     user_defined_symbols = ['[ZH]', '[EN]', '[JA]']
+    #user_defined_symbols = ['[SPACE]', '[ZH]', '[EN]', '[JA]']
     #unk_id = len(user_defined_symbols)
     unk_id = 2
     # Note: unk_id is fixed to 2.
