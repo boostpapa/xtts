@@ -17,6 +17,7 @@ from ttts.utils.utils import AttrDict, get_logger
 from ttts.utils.lr_scheduler import CosineLRScheduler
 import argparse
 import logging
+from setproctitle import setproctitle
 
 logging.getLogger("numba").setLevel(logging.WARNING)
 
@@ -76,8 +77,12 @@ class Trainer(object):
         self.accum_grad = self.cfg.train['accum_grad']
         self.lr = self.cfg.train['lr']
         self.weight_decay = self.cfg.train['weight_decay']
-        self.use_fp16 = self.cfg.train['fp16_run']
-        precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
+        self.precision = self.cfg.train['precision']
+        # ['no', 'fp8', 'fp16', 'bf16']
+        precision = self.precision
+        if self.precision == "fp32":
+            precision = "no"
+        print(">> training precision:", precision)
 
         self.gpt = UnifiedVoice(**self.cfg.gpt)
         if 'pretrain_model' in self.cfg.train:
@@ -193,6 +198,7 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
+        setproctitle("train")
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module
 
