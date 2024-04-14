@@ -301,7 +301,7 @@ class UnifiedVoice(nn.Module):
                  number_mel_codes=8194, start_mel_token=8192, stop_mel_token=8193, 
                  train_solo_embeddings=False, use_mel_codes_as_input=True,
                  checkpointing=True, types=1,
-                 condition_input_layer="conv2d2", condition_type="perceiver", use_perceiver=True):
+                 condition_input_layer="conv2d2", condition_type="perceiver", condition_perceiver_mult=4, use_perceiver=True):
         """
         Args:
             layers: Number of layers in transformer stack.
@@ -347,7 +347,7 @@ class UnifiedVoice(nn.Module):
             self.conditioning_encoder = ConformerEncoder(input_size=100, output_size=512, linear_units=2048,
                                                          attention_heads=8, num_blocks=6,
                                                          input_layer=condition_input_layer)
-            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=512, num_latents=self.cond_num)
+            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=512, ff_mult=condition_perceiver_mult, num_latents=self.cond_num)
         elif condition_type == "gst":
             self.gst_encoder = GST(100, model_dim)
         else:
