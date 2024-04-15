@@ -16,6 +16,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import ExponentialLR
 from accelerate import Accelerator
 from ttts.utils.utils import AttrDict, get_logger
+from ttts.utils.lr_scheduler import CosineLRScheduler
 import argparse
 import logging
 
@@ -31,7 +32,7 @@ def set_requires_grad(model, val):
 
 def get_grad_norm(model):
     total_norm = 0
-    for name,p in model.named_parameters():
+    for name, p in model.named_parameters():
         try:
             param_norm = p.grad.data.norm(2)
             total_norm += param_norm.item() ** 2
@@ -53,9 +54,18 @@ class Trainer(object):
         self.eval_interval = self.cfg.train['eval_interval']
         self.log_interval = self.cfg.train['log_interval']
         self.num_epochs = self.cfg.train['epochs']
+        self.batch_size = self.cfg.dataloader['batch_size']
+        self.accum_grad = self.cfg.train['accum_grad']
         self.c_comm = 0.25
-        self.use_fp16 = self.cfg.train['fp16_run']
-        precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
+        self.lr = self.cfg.train['lr']
+        self.weight_decay = self.cfg.train['weight_decay']
+        self.precision = self.cfg.train['precision']
+        # ['no', 'fp8', 'fp16', 'bf16']
+        precision = self.precision
+        if self.precision == "fp32":
+            precision = "no"
+        print(">> training precision:", precision)
+
         self.vqvae = DiscreteVAE(**self.cfg['vqvae'])
         if 'pretrain_model' in self.cfg['train']:
             model_pth = self.cfg.train['pretrain_model']
@@ -71,11 +81,21 @@ class Trainer(object):
             self.model_dir.mkdir(exist_ok=True, parents=True)
         self.logger = get_logger(self.model_dir)
 
-        self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=0.01)
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
+        self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=self.weight_decay)
+        total_batches = len(self.train_dataloader)
+        total_training_steps = total_batches * self.num_epochs / self.accum_grad
+        print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
+        if 'min_lr' in self.cfg.train:
+            self.min_lr = self.cfg.train['min_lr']
+            num_warmup_step = self.cfg.train['warmup_steps']
+            final_lr_ratio = self.min_lr / self.lr
+
+        #self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
+        self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step,
+                                           total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
+        self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step, total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
         self.vqvae, self.train_dataloader, self.optimizer = self.accelerator.prepare(self.vqvae, self.train_dataloader, self.optimizer)
 
-        self.accum_grad = self.cfg['train']['accum_grad']
         self.grad_clip = self.cfg['train']['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 50
