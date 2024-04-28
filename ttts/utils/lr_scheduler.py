@@ -46,3 +46,6 @@ class CosineLRScheduler(_LRScheduler):
 
     def get_lr(self):
         return [self._get_sched_lr(lr, self.last_epoch) for lr in self.base_lrs]
+
+    def set_step(self, step: int):
+        self.last_epoch = step

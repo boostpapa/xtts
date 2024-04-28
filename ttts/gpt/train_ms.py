@@ -71,6 +71,7 @@ class Trainer(object):
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollater(self.cfg))
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
+        self.save_interval = self.cfg.train['save_interval'] if 'save_interval' in self.cfg.train else None
         self.log_interval = self.cfg.train['log_interval']
         self.num_epochs = self.cfg.train['epochs']
         self.batch_size = self.cfg.dataloader['batch_size']
@@ -84,14 +85,23 @@ class Trainer(object):
             precision = "no"
         print(">> training precision:", precision)
 
+        self.global_step = 0
+        self.start_epoch = 0
         self.gpt = UnifiedVoice(**self.cfg.gpt)
         if 'pretrain_model' in self.cfg.train:
             model_pth = self.cfg.train['pretrain_model']
             logging.warning("loading pretrain model: {}".format(model_pth))
             gpt_checkpoint = torch.load(model_pth, map_location=torch.device("cpu"))
             gpt_checkpoint = gpt_checkpoint['model'] if 'model' in gpt_checkpoint else gpt_checkpoint
-            self.gpt.load_state_dict(gpt_checkpoint, strict=True)
+            self.global_step = gpt_checkpoint['step'] if 'step' in gpt_checkpoint else 0
+            self.start_epoch = gpt_checkpoint['epoch'] if 'epoch' in gpt_checkpoint else 0
+            self.strict = self.cfg.train['restore_strict'] if 'restore_strict' in self.cfg.train else True
+            self.gpt.load_state_dict(gpt_checkpoint, strict=self.strict)
             print(">> GPT weights restored from:", model_pth)
+        if 'step' in self.cfg.train:
+            self.global_step = self.cfg.train['step']
+        if 'start_epoch' in self.cfg.train:
+            self.start_epoch = self.cfg.train['start_epoch']
 
         # Load DVAE
         self.dvae = DiscreteVAE(**self.cfg['vqvae'])
@@ -120,6 +130,7 @@ class Trainer(object):
 
         #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
         self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step, total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
+        self.scheduler.set_step(self.global_step)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
         self.dvae.eval()
 
@@ -128,7 +139,6 @@ class Trainer(object):
         self.grad_clip = self.cfg.train['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 50
-        self.global_step = 0
 
     def _get_target_encoder(self, model):
         target_encoder = copy.deepcopy(model)
@@ -137,10 +147,12 @@ class Trainer(object):
             p.DO_NOT_TRAIN = True
         return target_encoder
 
-    def save_checkpoint(self, path):
+    def save_checkpoint(self, path, lr, epoch, step):
         if self.accelerator.is_main_process:
             data = {
-                'step': self.global_step,
+                'lr': lr,
+                'epoch': epoch,
+                'step': step,
                 'model': self.accelerator.get_state_dict(self.gpt),
             }
             torch.save(data, path)
@@ -198,7 +210,7 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
-        setproctitle("train")
+        setproctitle("test_xtts")
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module
 
@@ -213,9 +225,9 @@ class Trainer(object):
             losses = self.eval()
             lr = self.optimizer.param_groups[0]["lr"]
             self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.save_checkpoint(self.model_dir.joinpath(f"init.pth"))
+            #self.save_checkpoint(self.model_dir.joinpath(f"init.pth"), lr, self.start_epoch, self.global_step)
 
-        for epoch in range(0, self.num_epochs):
+        for epoch in range(self.start_epoch, self.num_epochs):
             text_losses = mel_losses = total_losses = 0.
             for batch_idx, batch in enumerate(self.train_dataloader):
                 if batch is None:
@@ -257,11 +269,15 @@ class Trainer(object):
                     ))
                     self.logger.info([x.item() for x in losses] + [self.global_step, lr])
 
+                if accelerator.is_main_process and self.save_interval is not None and self.global_step % self.save_interval == 0:
+                    self.logger.info("Saving checkpoint ...")
+                    self.save_checkpoint(self.model_dir.joinpath(f"checkpoint_{self.global_step}.pth"), lr, epoch, self.global_step)
+
                 if accelerator.is_main_process and self.global_step % self.eval_interval == 0:
                     self.logger.info("Evaluating ...")
                     losses = self.eval()
                     self.logger.info([x.item() for x in losses])
-                    # self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
+                    # self.save_checkpoint(self.model_dir.joinpath(f"checkpoint_{self.global_step}.pth"), lr, epoch, self.global_step)
                     scalar_dict = {"loss": total_losses, "loss_text": text_losses,
                                    "loss_mel": mel_losses,
                                    "loss/grad": grad_norm}
@@ -278,7 +294,7 @@ class Trainer(object):
                 losses = self.eval()
                 lr = self.optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"))
+            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
         accelerator.print('training complete')
 
 

@@ -81,7 +81,7 @@ class Trainer(object):
             self.model_dir.mkdir(exist_ok=True, parents=True)
         self.logger = get_logger(self.model_dir)
 
-        self.optimizer = AdamW(self.vqvae.parameters(), lr=self.cfg['train']['lr'], betas=(0.9, 0.999), weight_decay=self.weight_decay)
+        self.optimizer = AdamW(self.vqvae.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=self.weight_decay)
         total_batches = len(self.train_dataloader)
         total_training_steps = total_batches * self.num_epochs / self.accum_grad
         print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
@@ -93,8 +93,7 @@ class Trainer(object):
         #self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.cfg['train']['lr_decay'])
         self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step,
                                            total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
-        self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step, total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
-        self.vqvae, self.train_dataloader, self.optimizer = self.accelerator.prepare(self.vqvae, self.train_dataloader, self.optimizer)
+        self.vqvae, self.train_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.vqvae, self.train_dataloader, self.optimizer, self.scheduler)
 
         self.grad_clip = self.cfg['train']['grad_clip']
         if self.grad_clip <= 0:
@@ -199,6 +198,7 @@ class Trainer(object):
                 accelerator.wait_for_everyone()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
+                self.scheduler.step()
                 accelerator.wait_for_everyone()
 
                 if self.global_step % self.log_interval == 0:
@@ -235,7 +235,6 @@ class Trainer(object):
                 losses = self.eval()
                 lr = self.optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.scheduler.step()
             self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"))
         accelerator.print('training complete')
 
