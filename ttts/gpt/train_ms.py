@@ -18,6 +18,7 @@ from ttts.utils.lr_scheduler import CosineLRScheduler
 import argparse
 import logging
 from setproctitle import setproctitle
+from ttts.utils.checkpoint import load_checkpoint, load_pretrain_modules
 
 logging.getLogger("numba").setLevel(logging.WARNING)
 
@@ -88,16 +89,12 @@ class Trainer(object):
         self.global_step = 0
         self.start_epoch = 0
         self.gpt = UnifiedVoice(**self.cfg.gpt)
-        if 'pretrain_model' in self.cfg.train:
+        if 'checkpoint' in self.cfg.train:
+            model_pth = self.cfg.train['checkpoint']
+            self.global_step, self.start_epoch = load_checkpoint(self.gpt, model_pth)
+        elif 'pretrain_model' in self.cfg.train:
             model_pth = self.cfg.train['pretrain_model']
-            logging.warning("loading pretrain model: {}".format(model_pth))
-            gpt_checkpoint = torch.load(model_pth, map_location=torch.device("cpu"))
-            gpt_checkpoint = gpt_checkpoint['model'] if 'model' in gpt_checkpoint else gpt_checkpoint
-            self.global_step = gpt_checkpoint['step'] if 'step' in gpt_checkpoint else 0
-            self.start_epoch = gpt_checkpoint['epoch'] if 'epoch' in gpt_checkpoint else 0
-            self.strict = self.cfg.train['restore_strict'] if 'restore_strict' in self.cfg.train else True
-            self.gpt.load_state_dict(gpt_checkpoint, strict=self.strict)
-            print(">> GPT weights restored from:", model_pth)
+            load_pretrain_modules(self.gpt, model_pth)
         if 'step' in self.cfg.train:
             self.global_step = self.cfg.train['step']
         if 'start_epoch' in self.cfg.train:

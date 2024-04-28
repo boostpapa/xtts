@@ -23,20 +23,18 @@ from collections import OrderedDict
 import datetime
 
 
-def load_checkpoint(model: torch.nn.Module, path: str) -> dict:
+def load_checkpoint(model: torch.nn.Module, model_pth: str) -> dict:
     if torch.cuda.is_available():
-        logging.info('Checkpoint: loading from checkpoint %s for GPU' % path)
-        checkpoint = torch.load(path)
+        logging.info('Checkpoint: loading from checkpoint %s for GPU' % model_pth)
+        checkpoint = torch.load(model_pth)
     else:
-        logging.info('Checkpoint: loading from checkpoint %s for CPU' % path)
-        checkpoint = torch.load(path, map_location='cpu')
-    model.load_state_dict(checkpoint, strict=False)
-    info_path = re.sub('.pt$', '.yaml', path)
-    configs = {}
-    if os.path.exists(info_path):
-        with open(info_path, 'r') as fin:
-            configs = yaml.load(fin, Loader=yaml.FullLoader)
-    return configs
+        logging.info('Checkpoint: loading from checkpoint %s for CPU' % model_pth)
+        checkpoint = torch.load(model_pth, map_location='cpu')
+    checkpoint = checkpoint['model'] if 'model' in checkpoint else checkpoint
+    global_step = checkpoint['step'] if 'step' in checkpoint else 0
+    start_epoch = checkpoint['epoch'] if 'epoch' in checkpoint else 0
+    model.load_state_dict(checkpoint, strict=True)
+    return global_step, start_epoch
 
 
 def save_checkpoint(model: torch.nn.Module, path: str, infos=None):
@@ -101,3 +99,24 @@ def load_trained_modules(model: torch.nn.Module, model_path):
     model.load_state_dict(main_state_dict)
     configs = {}
     return configs
+
+
+def load_pretrain_modules(model: torch.nn.Module, model_path):
+    state_dict = model.state_dict()
+    logging.warning("model(s) found for pre-initialization")
+    if os.path.isfile(model_path):
+        logging.info(f'Checkpoint: loading from pretrain model {model_path} for CPU')
+        pretrain_state_dict = torch.load(model_path, map_location='cpu')
+        partial_state_dict = OrderedDict()
+        for key in state_dict:
+            for pkey in pretrain_state_dict:
+                if key.endswith(pkey):
+                    partial_state_dict[key] = pretrain_state_dict[pkey]
+                    logging.warning(f'{key} <- {pkey}')
+                else:
+                    logging.warning(f'{key}')
+        state_dict.update(partial_state_dict)
+    else:
+        logging.warning("model was not found : %s", model_path)
+    model.load_state_dict(state_dict)
+
