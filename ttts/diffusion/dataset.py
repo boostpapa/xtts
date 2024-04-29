@@ -8,6 +8,9 @@ from torch import LongTensor
 from tqdm import tqdm
 import torchaudio
 from collections import defaultdict
+import sentencepiece as spm
+from ttts.utils.byte_utils import byte_encode
+from ttts.utils.utils import tokenize_by_CJK_char
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
