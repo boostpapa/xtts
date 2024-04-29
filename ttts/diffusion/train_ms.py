@@ -33,7 +33,10 @@ from ttts.utils.diffusion import space_timesteps, SpacedDiffusion
 # from ttts.diffusion.diffusion_util import Diffuser
 # from accelerate import DistributedDataParallelKwargs
 from ttts.utils.utils import AttrDict, get_logger
+from ttts.utils.lr_scheduler import CosineLRScheduler
 from ttts.utils.utils import make_pad_mask
+from setproctitle import setproctitle
+from ttts.utils.checkpoint import load_checkpoint, load_pretrain_modules
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
 import argparse
@@ -121,12 +124,20 @@ class Trainer(object):
 
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
+        self.save_interval = self.cfg.train['save_interval'] if 'save_interval' in self.cfg.train else None
         self.log_interval = self.cfg.train['log_interval']
         self.num_epochs = self.cfg.train['epochs']
         self.accum_grad = self.cfg.train['accum_grad']
         self.lr = self.cfg.train['lr']
-        self.use_fp16 = self.cfg.train['fp16_run']
-        precision = "fp16" if self.use_fp16 else "no" # ['no', 'fp8', 'fp16', 'bf16']
+        self.precision = self.cfg.train['precision']
+        # ['no', 'fp8', 'fp16', 'bf16']
+        precision = self.precision
+        if self.precision == "fp32":
+            precision = "no"
+        print(">> training precision:", precision)
+
+        self.global_step = 0
+        self.start_epoch = 0
 
         self.diffusion = AA_diffusion(self.cfg)
         self.diffuser = SpacedDiffusion(
@@ -137,13 +148,14 @@ class Trainer(object):
             conditioning_free=False, conditioning_free_k=cond_free_k)
         # self.diffusion = DiffusionTts(**self.cfg['diffusion'])
 
-        if 'pretrain_model' in self.cfg:
-            model_path = self.cfg['pretrain_model']
-            logging.warning("loading pretrain model: {}".format(model_path))
-            diffusion_checkpoint = torch.load(model_path, map_location=torch.device("cpu"))
-            diffusion_checkpoint = diffusion_checkpoint['model'] if 'model' in diffusion_checkpoint else diffusion_checkpoint
-            self.diffusion.load_state_dict(diffusion_checkpoint, strict=False)
-            print(">> diffusion weights restored from:", model_path)
+        if 'checkpoint' in self.cfg.train:
+            model_pth = self.cfg.train['checkpoint']
+            self.global_step, self.start_epoch = load_checkpoint(self.gpt, model_pth)
+            print(">> Diffusion weights restored from checkpoint:", model_pth)
+        if 'step' in self.cfg.train:
+            self.global_step = self.cfg.train['step']
+        if 'start_epoch' in self.cfg.train:
+            self.start_epoch = self.cfg.train['start_epoch']
 
         ## load gpt model ##
         self.gpt = UnifiedVoice(**self.cfg.gpt)
@@ -180,18 +192,19 @@ class Trainer(object):
         print(f">> total training epoch: {self.num_epochs}, batches per epoch: {total_batches}, steps: {total_training_steps}")
         global final_lr_ratio
         global num_warmup_step
-        if 'min_lr' in self.cfg['train']:
+        if 'min_lr' in self.cfg.train:
             self.min_lr = self.cfg.train['min_lr']
             num_warmup_step = self.cfg.train['warmup_steps']
             final_lr_ratio = self.min_lr / self.lr
 
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
+        #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=get_cosine_schedule_with_warmup_lr)
+        self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step, total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
+        self.scheduler.set_step(self.global_step)
         self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae \
             = self.accelerator.prepare(self.diffusion, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler, self.gpt, self.dvae)
         self.grad_clip = self.cfg.train['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 50
-        self.global_step = 0
 
     def _get_target_encoder(self, model):
         target_encoder = copy.deepcopy(model)
@@ -203,7 +216,9 @@ class Trainer(object):
     def save_checkpoint(self, path):
         if self.accelerator.is_main_process:
             data = {
-                'step': self.global_step,
+                'lr': lr,
+                'epoch': epoch,
+                'step': step,
                 'model': self.accelerator.get_state_dict(self.diffusion),
             }
             torch.save(data, path)
@@ -243,7 +258,7 @@ class Trainer(object):
                 padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                 latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                   data['text_lengths'], padded_mel_code,
-                                  data['wav_lens'],
+                                  data['wav_lens'], cond_mel_lengths=data['mel_refer_lengths'],
                                   return_latent=True, clip_inputs=False)
 
                 mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
@@ -276,6 +291,7 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
+        setproctitle("test_diffusion")
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module
             self.gpt = self.gpt.module
@@ -297,9 +313,9 @@ class Trainer(object):
             losses = self.eval()
             lr = self.optimizer.param_groups[0]["lr"]
             self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.save_checkpoint(self.model_dir.joinpath(f"init.pth"))
+            #self.save_checkpoint(self.model_dir.joinpath(f"init.pth"), lr, self.start_epoch, self.global_step)
 
-        for epoch in range(0, self.num_epochs):
+        for epoch in range(self.start_epoch, self.num_epochs):
             total_losses = 0.
             for batch_idx, data in enumerate(self.train_dataloader):
                 if data is None:
@@ -312,7 +328,7 @@ class Trainer(object):
                     padded_mel_code = self.dvae.get_codebook_indices(data['padded_mel'])
                     latent = self.gpt(data['padded_mel_refer'], data['padded_text'],
                                       data['text_lengths'], padded_mel_code,
-                                      data['wav_lens'],
+                                      data['wav_lens'], cond_mel_lengths=data['mel_refer_lengths'],
                                       return_latent=True, clip_inputs=False)
 
                 mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
@@ -370,6 +386,10 @@ class Trainer(object):
                     ))
                     self.logger.info([x.item() for x in losses] + [self.global_step, lr])
 
+                if accelerator.is_main_process and self.save_interval is not None and self.global_step % self.save_interval == 0:
+                    self.logger.info("Saving checkpoint ...")
+                    self.save_checkpoint(self.model_dir.joinpath(f"checkpoint_{self.global_step}.pth"), lr, epoch, self.global_step)
+
                 if accelerator.is_main_process and self.global_step % self.eval_interval == 0:
                     self.logger.info("Evaluating ...")
                     losses = self.eval()
@@ -390,7 +410,7 @@ class Trainer(object):
                 losses = self.eval()
                 lr = self.optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"))
+            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
         accelerator.print('training complete')
 
 
