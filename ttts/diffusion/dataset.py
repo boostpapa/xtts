@@ -21,7 +21,7 @@ import os
 
 class DiffusionDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
-        self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+        if 'gpt_vocab' in cfg.dataset:
             self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
             self.use_spm = False
         else:
