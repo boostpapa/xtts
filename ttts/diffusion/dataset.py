@@ -19,6 +19,12 @@ import os
 class DiffusionDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
         self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+            self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+            self.use_spm = False
+        else:
+            self.tokenizer = spm.SentencePieceProcessor()
+            self.tokenizer.load(cfg.dataset['bpe_model'])
+            self.use_spm = True
         self.datalist = []
         self.spk2wav = defaultdict(list)
         with open(datafile, 'r', encoding='utf8') as fin:
@@ -34,45 +40,60 @@ class DiffusionDataset(torch.utils.data.Dataset):
         self.is_eval = is_eval
 
     def __getitem__(self, index):
-        # Fetch text and add start/stop tokens.
-        line = self.datalist[index]
-        # key, wav_path, spkid, language, raw_text, cleand_text
-        strs = line.strip().split("|")
-        if len(strs) < 6:
+        try:
+            # Fetch text and add start/stop tokens.
+            line = self.datalist[index]
+            # key, wav_path, spkid, language, raw_text, cleand_text
+            # key, wav_path, spkid, language, raw_text
+            strs = line.strip().split("|")
+            if (self.use_spm and len(strs) < 5) or (not self.use_spm and len(strs) < 6):
+                return None
+
+            if not self.use_spm:
+                cleand_text = strs[5]
+                # [language] + cleand_text
+                # cleand_text = f"[{strs[3]}] {cleand_text}"
+            else:
+                cleand_text = strs[4]
+                cleand_text = tokenize_by_CJK_char(cleand_text)
+                # cleand_text = f"[{strs[3]}] {cleand_text}"
+                #cleand_text = cleand_text.replace(' ', '[SPACE]')
+                cleand_text = byte_encode(cleand_text)
+            # print(f"cleand_text: {cleand_text}")
+            seqid = self.tokenizer.encode(cleand_text)
+            # print(f"seqid: {seqid}")
+            text_tokens = LongTensor(seqid)
+            # print(f"text_tokens.shape: {text_tokens} {len(text_tokens)}")
+
+            key = strs[0]
+            wav_path = strs[1]
+            spkid = strs[2]
+
+            wav = load_audio(wav_path, self.sample_rate)
+            if wav is None:
+                print(f"Warning: {wav_path} loading error, skip!")
+                return None
+            mel_raw = self.mel_extractor(wav)[0]
+            # print(f"mel_raw.shape: {mel_raw.shape}")
+
+            refer_wav_path = random.choice(self.spk2wav[spkid])
+            refer_wav = load_audio(refer_wav_path, self.sample_rate)
+            if refer_wav is None:
+                print(f"Warning: {wav_path} loading error, skip!")
+                return None
+            refer_wav_clip = get_prompt_slice(refer_wav, 4, 1, self.sample_rate, self.is_eval)
+            mel_refer = self.mel_extractor(refer_wav_clip)[0]
+
+            #mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
+            if mel_refer.shape[1] > 300:
+                mel_refer = mel_refer[:, :300]
+
+            if mel_raw.shape[1] > 400:
+                mel_raw = mel_raw[:, :400]
+            wav_length = mel_raw.shape[1] * 256
+        except:
+            print(f"Warning: {wav_path} processing error, skip!")
             return None
-        # [language] + cleand_text
-        #cleand_text = f"[{strs[3]}] {strs[5]}"
-        cleand_text = strs[5]
-        # print(f"cleand_text: {cleand_text}")
-        seqid = self.tokenizer.encode(cleand_text)
-        # print(f"seqid: {seqid}")
-        text_tokens = LongTensor(seqid)
-        # print(f"text_tokens.shape: {text_tokens} {len(text_tokens)}")
-
-        key = strs[0]
-        wav_path = strs[1]
-        spkid = strs[2]
-
-        wav = load_audio(wav_path, self.sample_rate)
-        if wav is None:
-            return None
-        mel_raw = self.mel_extractor(wav)[0]
-        # print(f"mel_raw.shape: {mel_raw.shape}")
-
-        refer_wav_path = random.choice(self.spk2wav[spkid])
-        refer_wav = load_audio(refer_wav_path, self.sample_rate)
-        if refer_wav is None:
-            return None
-        refer_wav_clip = get_prompt_slice(refer_wav, 4, 1, self.sample_rate, self.is_eval)
-        mel_refer = self.mel_extractor(refer_wav_clip)[0]
-
-        #mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
-        if mel_refer.shape[1] > 300:
-            mel_refer = mel_refer[:, :300]
-
-        if mel_raw.shape[1] > 400:
-            mel_raw = mel_raw[:, :400]
-        wav_length = mel_raw.shape[1] * 256
 
         return text_tokens, mel_raw, mel_refer, wav_length
 
