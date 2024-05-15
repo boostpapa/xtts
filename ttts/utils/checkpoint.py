@@ -24,12 +24,15 @@ import datetime
 
 
 def load_checkpoint(model: torch.nn.Module, model_pth: str) -> dict:
+    '''
     if torch.cuda.is_available():
         logging.info('Checkpoint: loading from checkpoint %s for GPU' % model_pth)
         checkpoint = torch.load(model_pth)
     else:
         logging.info('Checkpoint: loading from checkpoint %s for CPU' % model_pth)
         checkpoint = torch.load(model_pth, map_location='cpu')
+    '''
+    checkpoint = torch.load(model_pth, map_location='cpu')
     checkpoint = checkpoint['model'] if 'model' in checkpoint else checkpoint
     global_step = checkpoint['step'] if 'step' in checkpoint else 0
     start_epoch = checkpoint['epoch'] if 'epoch' in checkpoint else 0
@@ -108,13 +111,15 @@ def load_pretrain_modules(model: torch.nn.Module, model_path):
         logging.info(f'Checkpoint: loading from pretrain model {model_path} for CPU')
         pretrain_state_dict = torch.load(model_path, map_location='cpu')
         partial_state_dict = OrderedDict()
-        for key in state_dict:
-            for pkey in pretrain_state_dict:
+        for pkey in pretrain_state_dict:
+            used = False
+            for key in state_dict:
                 if key.endswith(pkey):
                     partial_state_dict[key] = pretrain_state_dict[pkey]
-                    logging.warning(f'{key} <- {pkey}')
-                else:
-                    logging.warning(f'{key}')
+                    logging.warning(f'{pkey} --> {key}')
+                    used = True
+            if not used:
+                logging.warning(f'{pkey} uninitialized')
         state_dict.update(partial_state_dict)
     else:
         logging.warning("model was not found : %s", model_path)
