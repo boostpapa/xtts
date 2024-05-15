@@ -150,7 +150,7 @@ class Trainer(object):
 
         if 'checkpoint' in self.cfg.train:
             model_pth = self.cfg.train['checkpoint']
-            self.global_step, self.start_epoch = load_checkpoint(self.gpt, model_pth)
+            self.global_step, self.start_epoch = load_checkpoint(self.diffusion, model_pth)
             print(">> Diffusion weights restored from checkpoint:", model_pth)
         if 'step' in self.cfg.train:
             self.global_step = self.cfg.train['step']
@@ -213,7 +213,7 @@ class Trainer(object):
             p.DO_NOT_TRAIN = True
         return target_encoder
 
-    def save_checkpoint(self, path):
+    def save_checkpoint(self, path, lr, epoch, step):
         if self.accelerator.is_main_process:
             data = {
                 'lr': lr,
@@ -386,7 +386,7 @@ class Trainer(object):
                     ))
                     self.logger.info([x.item() for x in losses] + [self.global_step, lr])
 
-                if accelerator.is_main_process and self.save_interval is not None and self.global_step % self.save_interval == 0:
+                if accelerator.is_main_process and batch_idx > 0 and self.save_interval is not None and self.global_step % self.save_interval == 0:
                     self.logger.info("Saving checkpoint ...")
                     self.save_checkpoint(self.model_dir.joinpath(f"checkpoint_{self.global_step}.pth"), lr, epoch, self.global_step)
 

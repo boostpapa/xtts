@@ -84,6 +84,7 @@ class DiffusionDataset(torch.utils.data.Dataset):
             if refer_wav is None:
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
+            #print(f"Info: {wav_path} processing Successed.")
             refer_wav_clip = get_prompt_slice(refer_wav, 4, 1, self.sample_rate, self.is_eval)
             mel_refer = self.mel_extractor(refer_wav_clip)[0]
 
@@ -96,6 +97,10 @@ class DiffusionDataset(torch.utils.data.Dataset):
             wav_length = mel_raw.shape[1] * 256
         except:
             print(f"Warning: {wav_path} processing error, skip!")
+            return None
+
+        if text_tokens.shape[0] > 300 or mel_raw.shape[1] > 2400:
+            print(f"Warning: {wav_path} text len {text_tokens.shape[0]} exceed 300 or raw mel len {mel_raw.shape[1]} exceed 2400.")
             return None
 
         return text_tokens, mel_raw, mel_refer, wav_length
