@@ -139,14 +139,14 @@ class Trainer(object):
         self.global_step = 0
         self.start_epoch = 0
 
-        self.diffusion = AA_diffusion(self.cfg)
         self.diffuser = SpacedDiffusion(
             use_timesteps=space_timesteps(trained_diffusion_steps, [desired_diffusion_steps]),
             model_mean_type='epsilon',
             model_var_type='learned_range', loss_type='mse',
             betas=get_named_beta_schedule('linear', trained_diffusion_steps),
             conditioning_free=False, conditioning_free_k=cond_free_k)
-        # self.diffusion = DiffusionTts(**self.cfg['diffusion'])
+        self.diffusion = AA_diffusion(self.cfg)
+        #self.diffusion = DiffusionTts(**self.cfg['diffusion'])
 
         if 'checkpoint' in self.cfg.train:
             model_pth = self.cfg.train['checkpoint']
