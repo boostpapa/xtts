@@ -3,13 +3,11 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from ttts.utils.utils import AttentionBlock
-from ttts.gpt.subsampling import Conv2dSubsampling4, Conv2dSubsampling6, \
+from ttts.gpt.conformer.subsampling import Conv2dSubsampling4, Conv2dSubsampling6, \
     Conv2dSubsampling8, LinearNoSubsampling, Conv2dSubsampling2
-from ttts.gpt.embedding import PositionalEncoding, RelPositionalEncoding, NoPositionalEncoding
-from ttts.gpt.attention import MultiHeadedAttention, RelPositionMultiHeadedAttention
+from ttts.gpt.conformer.embedding import PositionalEncoding, RelPositionalEncoding, NoPositionalEncoding
+from ttts.gpt.conformer.attention import MultiHeadedAttention, RelPositionMultiHeadedAttention
 from ttts.utils.utils import make_pad_mask
-import torch.nn.functional as F
 
 
 class PositionwiseFeedForward(torch.nn.Module):

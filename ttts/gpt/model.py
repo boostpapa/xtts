@@ -8,7 +8,7 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.utils.model_parallel_utils import get_device_map, assert_device_map
 from ttts.gpt.perceiver import PerceiverResampler
 from ttts.gpt.GST import GST
-from ttts.gpt.latent_encoder import ConformerEncoder
+from ttts.gpt.conformer_encoder import ConformerEncoder
 from ttts.utils.utils import AttentionBlock
 from ttts.utils.typical_sampling import TypicalLogitsWarper
 
@@ -49,6 +49,7 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         self.model_parallel = False
         self.device_map = None
         self.cached_mel_emb = None
+
     def parallelize(self, device_map=None):
         self.device_map = (
             get_device_map(len(self.transformer.h), range(max(1, torch.cuda.device_count())))
@@ -253,13 +254,13 @@ def build_hf_gpt_transformer(layers, model_dim, heads, max_mel_seq_len, max_text
     """
     from transformers import GPT2Config, GPT2Model
     gpt_config = GPT2Config(vocab_size=256,  # Unused.
-                             n_positions=max_mel_seq_len+max_text_seq_len,
-                             n_ctx=max_mel_seq_len+max_text_seq_len,
-                             n_embd=model_dim,
-                             n_layer=layers,
-                             n_head=heads,
-                             gradient_checkpointing=checkpointing,
-                             use_cache=not checkpointing)
+                            n_positions=max_mel_seq_len+max_text_seq_len,
+                            n_ctx=max_mel_seq_len+max_text_seq_len,
+                            n_embd=model_dim,
+                            n_layer=layers,
+                            n_head=heads,
+                            gradient_checkpointing=checkpointing,
+                            use_cache=not checkpointing)
     gpt = GPT2Model(gpt_config)
     # Override the built in positional embeddings
     del gpt.wpe
@@ -287,22 +288,19 @@ class MelEncoder(nn.Module):
                                      )
         self.reduction = 4
 
-
     def forward(self, x):
         for e in self.encoder:
             x = e(x)
-        return x.permute(0,2,1)
+        return x.permute(0, 2, 1)
 
 
 class UnifiedVoice(nn.Module):
     def __init__(self, layers=8, model_dim=512, heads=8, max_text_tokens=120, max_mel_tokens=250, max_conditioning_inputs=1,
-                 mel_length_compression=1024, 
-                 number_text_tokens=256, start_text_token=0, stop_text_token=1, 
-                 number_mel_codes=8194, start_mel_token=8192, stop_mel_token=8193, 
+                 mel_length_compression=1024, number_text_tokens=256,
+                 start_text_token=0, stop_text_token=1, number_mel_codes=8194, start_mel_token=8192, stop_mel_token=8193,
                  train_solo_embeddings=False, use_mel_codes_as_input=True,
                  checkpointing=True, types=1,
                  condition_type="perceiver", condition_module=None):
-                 #condition_type="perceiver", condition_input_layer="conv2d2", condition_perceiver_mult=4, use_perceiver=True):
         """
         Args:
             layers: Number of layers in transformer stack.
@@ -384,6 +382,7 @@ class UnifiedVoice(nn.Module):
             embeddings.append(self.mel_embedding)
         for module in embeddings:
             module.weight.data.normal_(mean=0.0, std=.02)
+
     def post_init_gpt2_config(self, use_deepspeed=False, kv_cache=False, half=False):
         seq_length = self.max_mel_tokens + self.max_text_tokens + 2
         gpt_config = GPT2Config(
@@ -407,23 +406,24 @@ class UnifiedVoice(nn.Module):
         )
         if use_deepspeed and half and torch.cuda.is_available():
             import deepspeed
-            self.ds_engine = deepspeed.init_inference(model=self.inference_model,  
-                                                    mp_size=1,
-                                                    replace_with_kernel_inject=True,
-                                                    dtype=torch.float16)
+            self.ds_engine = deepspeed.init_inference(model=self.inference_model,
+                                                      mp_size=1,
+                                                      replace_with_kernel_inject=True,
+                                                      dtype=torch.float16)
             self.inference_model = self.ds_engine.module.eval()
         elif use_deepspeed and torch.cuda.is_available():
             import deepspeed
-            self.ds_engine = deepspeed.init_inference(model=self.inference_model,  
-                                                    mp_size=1,
-                                                    replace_with_kernel_inject=True,
-                                                    dtype=torch.float32)
+            self.ds_engine = deepspeed.init_inference(model=self.inference_model,
+                                                      mp_size=1,
+                                                      replace_with_kernel_inject=True,
+                                                      dtype=torch.float32)
             self.inference_model = self.ds_engine.module.eval()
         else:
             self.inference_model = self.inference_model.eval()
 
         # self.inference_model = PrunedGPT2InferenceModel(gpt_config, self.gpt, self.mel_pos_embedding, self.mel_embedding, self.final_norm, self.mel_head)
         self.gpt.wte = self.mel_embedding
+
     def build_aligned_inputs_and_targets(self, input, start_token, stop_token):
         inp = F.pad(input, (1, 0), value=start_token)
         tar = F.pad(input, (0, 1), value=stop_token)
@@ -469,7 +469,6 @@ class UnifiedVoice(nn.Module):
 
         offset = speech_conditioning_inputs.shape[1]
         enc = gpt_out.last_hidden_state[:, offset:]
-        #enc = gpt_out.last_hidden_state[:, self.cond_num:] if self.use_perceiver else gpt_out.last_hidden_state[:, 1:]  # The first logit is tied to the speech_conditioning_input
         enc = self.final_norm(enc)
 
         if return_latent:
@@ -548,15 +547,15 @@ class UnifiedVoice(nn.Module):
             mel_codes = mel_codes[:, :max_mel_len]
             if raw_mels is not None:
                 raw_mels = raw_mels[:, :, :max_mel_len*4]
+
         # Set padding areas within MEL (currently it is coded with the MEL code for <zero>).
         #mel_codes_lengths = torch.div(wav_lengths, self.mel_length_compression, rounding_mode='trunc')
         mel_codes_lengths = torch.ceil(wav_lengths / self.mel_length_compression).long() + 1
         mel_codes = self.set_mel_padding(mel_codes, mel_codes_lengths)
 
         text_inputs = self.set_text_padding(text_inputs, text_lengths)
-
-        text_inputs = F.pad(text_inputs, (0,1), value=self.stop_text_token)
-        mel_codes = F.pad(mel_codes, (0,1), value=self.stop_mel_token)
+        text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
+        mel_codes = F.pad(mel_codes, (0, 1), value=self.stop_mel_token)
 
         conds = speech_conditioning_latent
         text_inputs, text_targets = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
