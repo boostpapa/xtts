@@ -3,6 +3,7 @@ import torch
 import torchaudio
 import argparse
 import json
+from omegaconf import OmegaConf
 import re
 import cv2
 import numpy as np
@@ -54,7 +55,11 @@ def main():
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
 
-    cfg = json.load(open(args.config))
+    if args.config.endswith(".json"):
+        cfg = json.load(open(args.config))
+    else:
+        cfg = OmegaConf.load(args.config)
+
     dvae = DiscreteVAE(**cfg['vqvae'])
     dvae = dvae.to(device)
 

@@ -351,7 +351,7 @@ class Trainer(object):
                             "refer": conditioning_latent
                         },
                     )["loss"].mean()
-                    unused_params =[]
+                    unused_params = []
                     model = self.accelerator.unwrap_model(self.diffusion)
                     unused_params.extend(list(model.refer_model.blocks.parameters()))
                     unused_params.extend(list(model.refer_model.out.parameters()))
@@ -445,6 +445,5 @@ if __name__ == '__main__':
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
     trainer = Trainer(args)
-    #trainer.load('/home/hyc/tortoise_plus_zh/ttts/diffusion/logs/2024-01-09-17-44-36/model-855.pt')
 
     trainer.train()
