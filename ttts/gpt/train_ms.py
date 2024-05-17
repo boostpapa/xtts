@@ -65,7 +65,7 @@ def get_cosine_schedule_with_warmup_lr(
 
 class Trainer(object):
     def __init__(self, args):
-        if audiopath.endswith(".json"):
+        if args.config.endswith(".json"):
             json_config = json.load(open(args.config))
             self.cfg = AttrDict(json_config)
         else:
