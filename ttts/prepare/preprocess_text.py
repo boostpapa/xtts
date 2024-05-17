@@ -3,6 +3,7 @@ from collections import defaultdict
 from random import shuffle
 from typing import Optional
 import os
+import re
 from multiprocessing import Pool
 from functools import partial
 
@@ -34,7 +35,8 @@ def callback(line):
 
 def process_line(line, type):
     try:
-        key, wav, spk, language, text = line.strip().split("|")
+        #key, wav, spk, language, text = line.strip().split("||\t")
+        key, wav, spk, language, text = re.split('\t|\\|', line.strip())
         if type == "clean":
             norm_text, phones = clean_text1(text, language)
             cleaned_line = "{}|{}|{}|{}|{}|{}\n".format(
