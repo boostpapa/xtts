@@ -1,6 +1,7 @@
 import copy
 from datetime import datetime
 import json
+from omegaconf import OmegaConf
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -44,8 +45,11 @@ def get_grad_norm(model):
 
 class Trainer(object):
     def __init__(self, args):
-        json_config = json.load(open(args.config))
-        self.cfg = AttrDict(json_config)
+        if audiopath.endswith(".json"):
+            json_config = json.load(open(args.config))
+            self.cfg = AttrDict(json_config)
+        else:
+            self.cfg = OmegaConf.load(args.config)
         self.train_dataset = PreprocessedMelDataset(self.cfg, self.cfg.dataset['training_files'])
         self.eval_dataset = PreprocessedMelDataset(self.cfg,  self.cfg.dataset['validation_files'], is_eval=True)
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=MelCollater(self.cfg))

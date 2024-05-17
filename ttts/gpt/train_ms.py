@@ -1,6 +1,7 @@
 import copy
 from datetime import datetime
 import json, math
+from omegaconf import OmegaConf
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, summarize, update_moving_average
@@ -64,8 +65,11 @@ def get_cosine_schedule_with_warmup_lr(
 
 class Trainer(object):
     def __init__(self, args):
-        json_config = json.load(open(args.config))
-        self.cfg = AttrDict(json_config)
+        if audiopath.endswith(".json"):
+            json_config = json.load(open(args.config))
+            self.cfg = AttrDict(json_config)
+        else:
+            self.cfg = OmegaConf.load(args.config)
         self.train_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['training_files'], is_eval=False)
         self.eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
@@ -92,9 +96,11 @@ class Trainer(object):
         if 'checkpoint' in self.cfg.train:
             model_pth = self.cfg.train['checkpoint']
             self.global_step, self.start_epoch = load_checkpoint(self.gpt, model_pth)
+            print(">> GPT weights restored from checkpoint:", model_pth)
         elif 'pretrain_model' in self.cfg.train:
             model_pth = self.cfg.train['pretrain_model']
             load_pretrain_modules(self.gpt, model_pth)
+            print(">> GPT weights initialize with pretrain model:", model_pth)
         if 'step' in self.cfg.train:
             self.global_step = self.cfg.train['step']
         if 'start_epoch' in self.cfg.train:
@@ -110,7 +116,7 @@ class Trainer(object):
         self.accelerator = Accelerator(mixed_precision=precision, split_batches=True)
         self.model_dir = Path(args.model)
         if self.accelerator.is_main_process:
-            self.model_dir.mkdir(exist_ok = True, parents=True)
+            self.model_dir.mkdir(exist_ok=True, parents=True)
         self.logger = get_logger(self.model_dir)
 
         self.optimizer = AdamW(self.gpt.parameters(), lr=self.lr, betas=(0.9, 0.96), weight_decay=self.weight_decay)
@@ -207,7 +213,7 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
-        setproctitle("test_xtts")
+        setproctitle("test_xtts_gpt")
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module
 
@@ -266,7 +272,7 @@ class Trainer(object):
                     ))
                     self.logger.info([x.item() for x in losses] + [self.global_step, lr])
 
-                if accelerator.is_main_process and self.save_interval is not None and self.global_step % self.save_interval == 0:
+                if accelerator.is_main_process and batch_idx > 0 and self.save_interval is not None and self.global_step % self.save_interval == 0:
                     self.logger.info("Saving checkpoint ...")
                     self.save_checkpoint(self.model_dir.joinpath(f"checkpoint_{self.global_step}.pth"), lr, epoch, self.global_step)
 
@@ -275,9 +281,10 @@ class Trainer(object):
                     losses = self.eval()
                     self.logger.info([x.item() for x in losses])
                     # self.save_checkpoint(self.model_dir.joinpath(f"checkpoint_{self.global_step}.pth"), lr, epoch, self.global_step)
-                    scalar_dict = {"loss": total_losses, "loss_text": text_losses,
-                                   "loss_mel": mel_losses,
-                                   "loss/grad": grad_norm}
+                    scalar_dict = {"loss": total_losses,
+                                    "loss_text": text_losses,
+                                    "loss_mel": mel_losses,
+                                    "loss/grad": grad_norm}
                     summarize(
                         writer=writer,
                         global_step=self.global_step,
