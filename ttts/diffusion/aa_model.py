@@ -19,8 +19,10 @@ from ttts.diffusion.cldm.cond_emb import CLIP
 
 from ttts.utils.utils import normalization, AttentionBlock
 
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 
 class BaseModel(nn.Module):
     """
@@ -231,7 +233,7 @@ class BaseModel(nn.Module):
             nn.SiLU(),
             zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
         )
-        self.hint_converter = nn.Conv1d(1024,model_channels,3,padding=1)
+        self.hint_converter = nn.Conv1d(1024, model_channels, 3, padding=1)
 
     def convert_to_fp16(self):
         """
@@ -261,17 +263,18 @@ class BaseModel(nn.Module):
         # scale, shift = torch.chunk(context, 2, dim = 1)
         # hint = hint*(1+scale)+shift
         h = x.type(self.dtype)
-        flag=0
+        flag = 0
         for module in self.blocks:
-            if flag==0:
+            if flag == 0:
                 h = module(h, emb, context, control.pop(0))
                 h += hint
-                flag=1
+                flag = 1
             else:
                 h = module(h, emb, context, control.pop(0))
             hs.append(h)
         h = h.type(x.dtype)
         return self.out(h)
+
 
 class ReferenceNet(BaseModel):
     def forward(self, x, timesteps=None, context=None, **kwargs):
@@ -281,12 +284,13 @@ class ReferenceNet(BaseModel):
         emb = self.time_embed(t_emb)
         h = x.type(self.dtype)
         for module in self.blocks:
-            h,refer = module(h, emb, context,return_refer=True)
+            h, refer = module(h, emb, context, return_refer=True)
             hs.append(h)
             control.append(refer)
         h = h.type(x.dtype)
         # h = self.out(h)
         return control
+
 
 TACOTRON_MEL_MAX = 5.5451774444795624753378569716654
 TACOTRON_MEL_MIN = -16.118095650958319788125940182791
@@ -294,16 +298,24 @@ TACOTRON_MEL_MIN = -16.118095650958319788125940182791
 
 CVEC_MAX = 5.5451774444795624753378569716654
 CVEC_MIN = -5.5451774444795624753378569716654
+
+
 def denormalize_tacotron_mel(norm_mel):
     return norm_mel/0.18215
+
+
 def normalize_tacotron_mel(mel):
     mel = torch.clamp(mel, min=-TACOTRON_MEL_MAX)
     return mel*0.18215
 
+
 def denormalize_cvec(norm_mel):
     return norm_mel/0.11111
+
+
 def normalize_cvec(mel):
     return mel*0.11111
+
 
 class AA_diffusion(nn.Module):
     def __init__(self, config, *args, **kwargs):
@@ -320,7 +332,8 @@ class AA_diffusion(nn.Module):
         # self.refer_model = instantiate_from_config(refer_config)
         self.control_scales = [1.0] * 13
         # self.unconditioned_embedding = nn.Parameter(torch.randn(1,100,1))
-        self.unconditioned_cat_embedding = nn.Parameter(torch.randn(1,1024,1))
+        self.unconditioned_cat_embedding = nn.Parameter(torch.randn(1, 1024, 1))
+
     def get_uncond_batch(self, code_emb):
         unconditioned_batches = torch.zeros((code_emb.shape[0], 1, 1), device=code_emb.device)
         # Mask out the conditioning branch for whole batch elements, implementing something similar to classifier-free guidance.
@@ -330,6 +343,7 @@ class AA_diffusion(nn.Module):
             code_emb = torch.where(unconditioned_batches, self.unconditioned_cat_embedding.repeat(code_emb.shape[0], 1, 1),
                                    code_emb)
         return code_emb
+
     def forward(self, x, t, hint, refer, conditioning_free=False):
         if self.use_mrte:
             hint = self.mrte(refer, hint)
@@ -340,6 +354,6 @@ class AA_diffusion(nn.Module):
                 hint = self.get_uncond_batch(hint)
             hint = F.interpolate(hint, size=x.shape[-1], mode='nearest')
         refer_cross = self.refer_enc(refer)
-        refer_self = self.refer_model(refer, timesteps = t, context = refer_cross)
+        refer_self = self.refer_model(refer, timesteps=t, context=refer_cross)
         eps = self.base_model(x, timesteps=t, context=refer_cross, hint=hint, control=refer_self)
         return eps
