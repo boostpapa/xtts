@@ -301,7 +301,8 @@ class UnifiedVoice(nn.Module):
                  number_mel_codes=8194, start_mel_token=8192, stop_mel_token=8193, 
                  train_solo_embeddings=False, use_mel_codes_as_input=True,
                  checkpointing=True, types=1,
-                 condition_input_layer="conv2d2", condition_type="perceiver", condition_perceiver_mult=4, use_perceiver=True):
+                 condition_type="perceiver", condition_module=None):
+                 #condition_type="perceiver", condition_input_layer="conv2d2", condition_perceiver_mult=4, use_perceiver=True):
         """
         Args:
             layers: Number of layers in transformer stack.
@@ -344,10 +345,16 @@ class UnifiedVoice(nn.Module):
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
         elif condition_type == "conformer_perceiver":
-            self.conditioning_encoder = ConformerEncoder(input_size=100, output_size=512, linear_units=2048,
-                                                         attention_heads=8, num_blocks=6,
-                                                         input_layer=condition_input_layer)
-            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=512, ff_mult=condition_perceiver_mult, num_latents=self.cond_num)
+            self.conditioning_encoder = ConformerEncoder(input_size=100,
+                                                         output_size=condition_module['output_size'], 
+                                                         linear_units=condition_module['linear_units'],
+                                                         attention_heads=condition_module['attention_heads'], 
+                                                         num_blocks=condition_module['num_blocks'],
+                                                         input_layer=condition_module['input_layer'])
+            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=condition_module['output_size'], 
+                                                        ff_mult=condition_module['perceiver_mult'], 
+                                                        heads=condition_module['attention_heads'],
+                                                        num_latents=self.cond_num)
         elif condition_type == "gst":
             self.gst_encoder = GST(100, model_dim)
         else:
@@ -563,6 +570,7 @@ class UnifiedVoice(nn.Module):
         mel_emb = mel_emb + self.mel_pos_embedding(mel_codes)
 
         if text_first:
+            #print(f"conds: {conds.shape}, text_emb: {text_emb.shape}, mel_emb: {mel_emb.shape}")
             text_logits, mel_logits = self.get_logits(conds, text_emb, self.text_head, mel_emb, self.mel_head, get_attns=return_attentions, return_latent=return_latent)
             if return_latent:
                 return mel_logits[:, :-2]  # Despite the name, these are not logits. Strip off the two tokens added by this forward pass.
