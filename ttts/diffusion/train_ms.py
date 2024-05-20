@@ -45,24 +45,6 @@ import logging
 logging.getLogger("numba").setLevel(logging.WARNING)
 
 
-def do_spectrogram_diffusion(diffusion_model, diffuser, latents, conditioning_latents, upstride=4, temperature=1, verbose=True):
-    """
-    Uses the specified diffusion model to convert discrete codes into a spectrogram.
-    """
-    with torch.no_grad():
-        output_seq_len = int(latents.shape[2] * upstride) # This diffusion model converts from 22kHz spectrogram codes to a 24kHz spectrogram signal.
-        output_shape = (latents.shape[0], 100, output_seq_len)
-
-        noise = torch.randn(output_shape, device=latents.device) * temperature
-        mel = diffuser.p_sample_loop(diffusion_model, output_shape, noise=noise,
-                                    model_kwargs={
-                                        "hint": latents,
-                                        "refer": conditioning_latents
-                                    },
-                                    progress=verbose)
-        return denormalize_tacotron_mel(mel)[:, :, :output_seq_len]
-
-
 def set_requires_grad(model, val):
     for p in model.parameters():
         p.requires_grad = val
