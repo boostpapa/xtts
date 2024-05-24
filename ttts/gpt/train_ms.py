@@ -21,6 +21,17 @@ import logging
 from setproctitle import setproctitle
 from ttts.utils.checkpoint import load_checkpoint, load_pretrain_modules
 
+print(f"torch.backends.cuda.matmul.allow_tf32: {torch.backends.cuda.matmul.allow_tf32}")
+print(f"torch.backends.cudnn.allow_tf32: {torch.backends.cudnn.allow_tf32}")
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True  # If encontered training problem,please try to disable TF32.
+#torch.set_float32_matmul_precision("medium")
+torch.backends.cuda.sdp_kernel("flash")
+torch.backends.cuda.enable_flash_sdp(True)
+#torch.backends.cuda.enable_mem_efficient_sdp(True)  # Not available if torch version is lower than 2.0
+torch.backends.cuda.enable_math_sdp(True)
+#torch.backends.cudnn.benchmark = True
+
 logging.getLogger("numba").setLevel(logging.WARNING)
 
 
@@ -89,6 +100,9 @@ class Trainer(object):
         if self.precision == "fp32":
             precision = "no"
         print(">> training precision:", precision)
+        downcast_bf16 = False
+        if self.precision == "bf16":
+            downcast_bf16 = True
 
         self.global_step = 0
         self.start_epoch = 0
@@ -112,6 +126,7 @@ class Trainer(object):
         if 'model' in dvae_checkpoint:
             dvae_checkpoint = dvae_checkpoint['model']
         self.dvae.load_state_dict(dvae_checkpoint, strict=False)
+        self.dvae.eval()
 
         self.accelerator = Accelerator(mixed_precision=precision, split_batches=True)
         self.model_dir = Path(args.model)
@@ -135,7 +150,6 @@ class Trainer(object):
         self.scheduler = CosineLRScheduler(self.optimizer, warmup_steps=num_warmup_step, total_steps=total_training_steps, lr_min_ratio=final_lr_ratio)
         self.scheduler.set_step(self.global_step)
         self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler = self.accelerator.prepare(self.gpt, self.dvae, self.train_dataloader, self.eval_dataloader, self.optimizer, self.scheduler)
-        self.dvae.eval()
 
         self.mel_loss_weight = self.cfg.train['mel_weight']
         self.text_loss_weight = self.cfg.train['text_weight']
@@ -298,8 +312,9 @@ class Trainer(object):
                 losses = self.eval()
                 lr = self.optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
+                self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
         accelerator.print('training complete')
+        accelerator.end_training()
 
 
 def get_args():

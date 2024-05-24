@@ -68,6 +68,13 @@ class Trainer(object):
             precision = "no"
         print(">> training precision:", precision)
 
+        if self.precision == "fp16":
+            self.dtype = torch.float16
+        elif self.precision == "bf16":
+            self.dtype = torch.bfloat16
+        else:   # fp32
+            self.dtype = None
+
         self.global_step = 0
         self.start_epoch = 0
         self.gpt = UnifiedVoice(**self.cfg.gpt)
@@ -121,6 +128,19 @@ class Trainer(object):
         if self.grad_clip <= 0:
             self.grad_clip = 50
 
+    def save_checkpoint(self, path, lr, epoch, step):
+        if self.accelerator.is_main_process:
+            data = {
+                'lr': lr,
+                'epoch': epoch,
+                'step': step,
+                'model': self.accelerator.get_state_dict(self.gpt),
+            }
+            torch.save(data, path)
+            # unwrapped_model = self.accelerator.unwrap_model(self.gpt)
+            # self.accelerator.save(unwrapped_model.state_dict(), path)
+            # torch.save(unwrapped_model, path)
+
     def eval(self):
         model = self.accelerator.unwrap_model(self.gpt)
         device = self.accelerator.device
@@ -133,9 +153,11 @@ class Trainer(object):
                 input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
                                 batch['padded_raw_mel'], batch['wav_lens']]
                 input_data = [d.to(device) for d in input_data]
-                # get vqvae codes from raw mel
-                input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                loss_text, loss_mel, mel_logits = model(*input_data, cond_mel_lengths=batch['cond_mel_lengths'])
+                #with self.accelerator.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+                with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+                    # get vqvae codes from raw mel
+                    input_data[3] = self.dvae.get_codebook_indices(input_data[3])
+                    loss_text, loss_mel, mel_logits = model(*input_data, cond_mel_lengths=batch['cond_mel_lengths'])
                 num_sample = input_data[0].shape[0]
                 #self.logger.info([loss_text, loss_mel])
                 text_losses += loss_text * num_sample
@@ -152,6 +174,7 @@ class Trainer(object):
         accelerator = self.accelerator
         device = accelerator.device
         setproctitle("test_xtts_gpt")
+        self.dvae.cuda()
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module
 
@@ -166,7 +189,7 @@ class Trainer(object):
             losses = self.eval()
             lr = self.optimizer.param_groups[0]["lr"]
             self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            #self.save_checkpoint(self.model_dir.joinpath(f"init.pth"), lr, self.start_epoch, self.global_step)
+            self.save_checkpoint(self.model_dir.joinpath(f"init.pth"), lr, self.start_epoch, self.global_step)
 
         for epoch in range(self.start_epoch, self.num_epochs):
             text_losses = mel_losses = total_losses = 0.
@@ -177,10 +200,11 @@ class Trainer(object):
                 input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
                                 batch['padded_raw_mel'], batch['wav_lens']]
                 input_data = [d.to(device) for d in input_data]
-                # get vqvae codes from raw mel
-                with torch.no_grad():
-                    input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                with accelerator.autocast():
+                #with accelerator.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+                with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+                    # get vqvae codes from raw mel
+                    with torch.no_grad():
+                        input_data[3] = self.dvae.get_codebook_indices(input_data[3])
                     loss_text, loss_mel, mel_logits = self.gpt(*input_data, cond_mel_lengths=batch['cond_mel_lengths'])
                     loss = loss_text * self.text_loss_weight + loss_mel * self.mel_loss_weight
                     loss = loss / self.accum_grad
@@ -236,7 +260,7 @@ class Trainer(object):
                 losses = self.eval()
                 lr = self.optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
+                self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
         accelerator.print('training complete')
 
 
