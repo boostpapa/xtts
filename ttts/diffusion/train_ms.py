@@ -144,7 +144,7 @@ class Trainer(object):
         gpt_path = self.cfg.gpt_checkpoint
         gpt_checkpoint = torch.load(gpt_path, map_location=torch.device("cpu"))
         gpt_checkpoint = gpt_checkpoint['model'] if 'model' in gpt_checkpoint else gpt_checkpoint
-        self.gpt.load_state_dict(gpt_checkpoint, strict=False)
+        self.gpt.load_state_dict(gpt_checkpoint, strict=True)
         self.gpt.eval()
         print(">> GPT weights restored from:", gpt_path)
         self.mel_length_compression = self.gpt.mel_length_compression
@@ -155,7 +155,7 @@ class Trainer(object):
         dvae_checkpoint = torch.load(dvae_path, map_location=torch.device("cpu"))
         if 'model' in dvae_checkpoint:
             dvae_checkpoint = dvae_checkpoint['model']
-        self.dvae.load_state_dict(dvae_checkpoint, strict=False)
+        self.dvae.load_state_dict(dvae_checkpoint, strict=True)
         self.dvae.eval()
         print(">> vqvae weights restored from:", dvae_path)
 
@@ -312,11 +312,10 @@ class Trainer(object):
                                       data['text_lengths'], padded_mel_code,
                                       data['wav_lens'], cond_mel_lengths=data['mel_refer_lengths'],
                                       return_latent=True, clip_inputs=False)
-
-                mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
-                mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
-                latent = latent.masked_fill_(mask_pad, 0.0)
-                latent = latent.transpose(1, 2)
+                    mel_codes_lens = torch.ceil(data['wav_lens'] / self.mel_length_compression).long()
+                    mask_pad = make_pad_mask(mel_codes_lens).unsqueeze(2)
+                    latent = latent.masked_fill_(mask_pad, 0.0)
+                    latent = latent.transpose(1, 2)
 
                 # mel_recon_padded, mel_padded, mel_lengths, refer_padded, refer_lengths
                 x_start = normalize_tacotron_mel(data['padded_mel'])
@@ -392,7 +391,7 @@ class Trainer(object):
                 losses = self.eval()
                 lr = self.optimizer.param_groups[0]["lr"]
                 self.logger.info([x.item() for x in losses] + [self.global_step, lr])
-            self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
+                self.save_checkpoint(self.model_dir.joinpath(f"epoch_{epoch}.pth"), lr, epoch, self.global_step)
         accelerator.print('training complete')
 
 
