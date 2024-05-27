@@ -24,18 +24,6 @@ from ttts.utils.checkpoint import load_checkpoint, load_pretrain_modules
 logging.getLogger("numba").setLevel(logging.WARNING)
 
 
-def get_grad_norm(model):
-    total_norm = 0
-    for name, p in model.named_parameters():
-        try:
-            param_norm = p.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
-        except:
-            print(name)
-    total_norm = total_norm ** (1. / 2) 
-    return total_norm
-
-
 num_warmup_step = 1000
 total_training_steps = 100000
 final_lr_ratio = 0.1
@@ -216,7 +204,8 @@ class Trainer(object):
                 if batch_idx % self.accum_grad != 0:
                     continue
 
-                grad_norm = get_grad_norm(self.gpt)
+                #grad_norm = get_grad_norm(self.gpt)
+                grad_norm = 0.
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(self.gpt.parameters(), self.grad_clip)
                 accelerator.wait_for_everyone()
@@ -295,6 +284,5 @@ if __name__ == '__main__':
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
     trainer = Trainer(args)
-    # trainer.load('/home/hyc/tortoise_plus_zh/ttts/gpt/logs/2023-12-24-14-22-14/model-70.pt')
 
     trainer.train()
