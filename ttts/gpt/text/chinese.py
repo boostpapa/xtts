@@ -2,7 +2,7 @@ import os
 import re
 
 import cn2an
-from pypinyin import lazy_pinyin, Style
+from pypinyin import lazy_pinyin, Style, load_phrases_dict
 
 from ttts.gpt.text.symbols import punctuation
 from ttts.gpt.text.tone_sandhi import ToneSandhi
@@ -15,6 +15,7 @@ pinyin_to_symbol_map = {
     for line in open(os.path.join(current_file_path, "opencpop-strict.txt")).readlines()
 }
 an2cn_normalizer = TextNormalizer()
+#load_phrases_dict({'哟': [['yuo1']]})
 
 EN_WORD_TG = '▁'
 #import jieba
@@ -33,6 +34,8 @@ rep_map = {
     "·": ",",
     "、": ",",
     "...": "…",
+    "...": "…",
+    "……": "…",
     "$": ".",
     "“": "'",
     "”": "'",
@@ -92,6 +95,92 @@ def replace_punctuation(text):
     return replaced_text
 
 
+sen_punctuation = ["!", "?", ".", ";", "！", "？", "。", "；"]
+sen_pattern = r"(?<=[{0}])\s*".format("".join(sen_punctuation))
+pau_punctuation = ["，", ","]
+pau_pattern = r"(?<=[{0}])\s*".format("".join(pau_punctuation))
+wrd_pattern = re.compile(
+        r"([\u1100-\u11ff\u2e80-\ua4cf\ua840-\uD7AF\uF900-\uFAFF\uFE30-\uFE4F\uFF65-\uFFDC\U00020000-\U0002FFFF])")
+
+
+def _sentence_len(sentence):
+    chars = wrd_pattern.split(sentence.strip())
+    sen_len = 0
+    for w in chars:
+        sen_len += len(w.strip().split())
+    return sen_len
+
+
+def split_sentences(text, min_len=15, max_len=50):
+    sentences = [ss for ss in re.split(sen_pattern, text) if ss.strip() != ""]
+
+    sen_lens = []
+    merge_flags = []
+    length = len(sentences)
+    if length <= 1:
+        return sentences
+
+    sentences1 = []
+    for i in range(0, length):
+        sen_len = _sentence_len(sentences[i])
+        if sen_len <= max_len:
+            sentences1.append(sentences[i])
+            sen_lens.append(sen_len)
+            merge = True if sen_len >= min_len else False
+            merge_flags.append(merge)
+        else:
+            sens = [ss for ss in re.split(pau_pattern, sentences[i]) if ss.strip() != ""]
+            ss = ""
+            ssl = 0
+            for j in range(0, len(sens)):
+                senl = _sentence_len(sens[j])
+                if ssl+senl < (min_len+max_len)/2 or ssl==0:
+                    ss += sens[j]
+                    ssl += senl
+                else:
+                    ## to do senl > max_len
+                    sentences1.append(ss)
+                    sen_lens.append(ssl)
+                    merge_flags.append(True)
+                    ss = sens[j]
+                    ssl = senl
+            if ssl > 0: 
+                sentences1.append(ss)
+                sen_lens.append(ssl)
+                merge = True if ssl >= min_len else False
+                merge_flags.append(merge)
+    sentences = sentences1
+
+    while not all(merge_flags):
+        length = len(sentences)
+        if length <= 1:
+            break
+        min_sen_len = min(sen_lens)
+        idx = sen_lens.index(min_sen_len)
+        if idx == 0:
+            tag_idx = idx+1
+        elif idx == length-1:
+            tag_idx = idx-1
+        else:
+            tag_idx = idx-1 if sen_lens[idx-1] <= sen_lens[idx+1] else idx+1
+        new_len = sen_lens[idx]+sen_lens[tag_idx]
+        if new_len <= max_len:
+            sen_lens[tag_idx] = new_len
+            if new_len >= min_len:
+                merge_flags[tag_idx] = True
+            if tag_idx > idx:
+                sentences[tag_idx] = sentences[idx]+" "+sentences[tag_idx]
+            else:
+                sentences[tag_idx] = sentences[tag_idx]+" "+sentences[idx]
+            sen_lens.pop(idx)
+            merge_flags.pop(idx)
+            sentences.pop(idx)
+        else:
+            merge_flags[idx] = True
+            sen_lens[idx] = min_len
+    return sentences
+
+
 def _is_all_chinese(strs):
     for _char in strs:
         if not '\u4e00' <= _char <= '\u9fa5':
@@ -148,13 +237,15 @@ def g2w(text):
 def _get_initials_finals(word):
     initials = []
     finals = []
+    #orig_initials = lazy_pinyin(word, neutral_tone_with_five=True, style=Style.INITIALS, strict=False)
     orig_initials = lazy_pinyin(word, neutral_tone_with_five=True, style=Style.INITIALS)
-    orig_finals = lazy_pinyin(
-        word, neutral_tone_with_five=True, style=Style.FINALS_TONE3
-    )
+    orig_finals = lazy_pinyin(word, neutral_tone_with_five=True, style=Style.FINALS_TONE3)
     for c, v in zip(orig_initials, orig_finals):
         initials.append(c)
         finals.append(v)
+    for i in range(0, len(word)):
+        if word[i] == '哟':
+            initials[i] = 'y'
     return initials, finals
 
 
@@ -220,6 +311,8 @@ def _g2w(segments):
                 continue
 
             sub_initials, sub_finals = _get_initials_finals(word)
+            #print(sub_initials)
+            #print(sub_finals)
             sub_finals = tone_modifier.modified_tone(word, pos, sub_finals)
 
             initials = sub_initials
@@ -239,6 +332,7 @@ def _g2w(segments):
  
                     pinyin = c + v_without_tone
                     assert tone in "12345"
+                    #print(pinyin)
  
                     if c:
                         # 多音节
@@ -260,6 +354,7 @@ def _g2w(segments):
                         if pinyin in pinyin_rep_map.keys():
                             pinyin = pinyin_rep_map[pinyin]
                         else:
+                            #"v": "yu",
                             single_rep_map = {
                                 "v": "yu",
                                 "e": "e",
@@ -269,6 +364,7 @@ def _g2w(segments):
                             if pinyin[0] in single_rep_map.keys():
                                 pinyin = single_rep_map[pinyin[0]] + pinyin[1:]
  
+                    #print(pinyin)
                     assert pinyin in pinyin_to_symbol_map.keys(), (pinyin, seg, raw_pinyin)
                     #phone = pinyin_to_symbol_map[pinyin].split(" ")
                     phone = pinyin + tone
@@ -304,7 +400,6 @@ if __name__ == "__main__":
     text = "想想口水又来了,可以保留个 VIP 卡,可以打折哦!"
     text = "服务员总体比较松散,butter喊了几次都没给我拿来."
     text = "富士通推出以人为本的aizinrai butter VIP系统."
-    text = "富士通推出以人为本aizinrai的aizinrai butter VIP系统."
     text = "大厅里 有 弹钢琴 ，当时 好像 唱的是 yesterday  once more 。…-"
     text = "一个月期涨零点九一 BP 报百分之四点零三六一。"
     text = "你真是太慷慨了.我觉得这样is ok"
@@ -314,10 +409,22 @@ if __name__ == "__main__":
     text = "剩了 一些 茶卤儿 ，留着 过年吧 。年夜饭的 剩菜 干一干 可香啦 。"
     text = "气球给你们， 别抢我 switch"
     text = "呣呣呣～就是…大人的鼹鼠党吧？"
+    text = "九元的官方价格"
+    text = "友"
+    text = "哟,马娘越来越克了,"
+    text = "好耶!天依会一直为你加油的!"
+    text = "once upon a time, there lived in a certain village. a little country girl, the prettiest creature who was ever seen. her mother was accessibly fond of her and her grandmother doted on her still more."
+    text = "斯塔西亚，不要睡，睁开眼睛。你不是一直想回到洛伦去吗？洛伦啊，你的故乡，那里有海，有草原，有脆脆绵绵的朝夕果……你在听吗，呜呜……斯塔西亚，求你……睁开眼睛看看。"
     text = "G P 是吧?U显卡 RTX GPU 4080, 啊！但是《原神》是由,米哈\游自主，  … 猪头- !?[研发]的一款全.新开放世界.冒险游戏"
+    text = "富士通推出以人为本aizinrai的aizinrai butter VIP系统."
+    text = "G P 是吧?你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗,冒险游戏"
+    sens = split_sentences(text)
+    print(sens)
     print(text)
     text = text_normalize(text)
     print(text)
+    #text = _split_cn_en(text)
+    #print(text)
     phones = g2w(text)
     print(phones)
 
