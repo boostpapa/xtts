@@ -418,6 +418,7 @@ if __name__ == "__main__":
     text = "G P 是吧?U显卡 RTX GPU 4080, 啊！但是《原神》是由,米哈\游自主，  … 猪头- !?[研发]的一款全.新开放世界.冒险游戏"
     text = "富士通推出以人为本aizinrai的aizinrai butter VIP系统."
     text = "G P 是吧?你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗,冒险游戏"
+    text = ""
     sens = split_sentences(text)
     print(sens)
     print(text)
