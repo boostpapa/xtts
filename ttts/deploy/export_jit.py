@@ -78,13 +78,45 @@ class TTSModel(torch.nn.Module):
         print(codes)
         print(f"codes shape: {codes.shape}")
         code_lens = []
+
+        for i in range(0, codes.shape[0]):
+            code = codes[i]
+            if self.cfg.gpt.stop_mel_token not in code:
+                code_lens.append(len(code))
+                len_ = len(code)
+            else:
+                #len_ = code.cpu().tolist().index(8193)+1
+                len_ = (code == 8193).nonzero(as_tuple=False)[0]+1
+                len_ = len_ - 2
+
+            count = torch.sum(code == 52).item()
+            if count > 50:
+                code = code.cpu().tolist()
+                ncode = []
+                n = 0
+                for k in range(0, len_):
+                    if code[k] != 52:
+                        ncode.append(code[k])
+                        n = 0
+                    elif code[k] == 52 and n < 50:
+                        ncode.append(code[k])
+                        n += 1
+                    if (k == 0 and code[k] == 52) or (code[k] == 52 and code[k-1] == 52):
+                        n += 1
+                len_ = len(ncode)
+                codes[i] = 8193
+                codes[i, 0:len_] = ncode
+            code_lens.append(len_)
+
+        '''
         for code in codes:
-                if self.cfg.gpt.stop_mel_token not in code:
-                    code_lens.append(len(code))
-                else:
-                    #len_ = code.cpu().tolist().index(8193)+1
-                    len_ = (code == 8193).nonzero(as_tuple=False)[0]+1
-                    code_lens.append(len_-2)
+            if self.cfg.gpt.stop_mel_token not in code:
+                code_lens.append(len(code))
+            else:
+                #len_ = code.cpu().tolist().index(8193)+1
+                len_ = (code == 8193).nonzero(as_tuple=False)[0]+1
+                code_lens.append(len_-2)
+        '''
         code_lens = torch.LongTensor(code_lens).cuda()
         print(f"code len: {code_lens}")
 
@@ -108,7 +140,7 @@ class TTSModel(torch.nn.Module):
         torch.clip(wav, -32767.0, 32767.0)
         mels = []
         for w, len_ in zip(mel, code_lens):                                                                                                                                                                                                                         
-                w = w[..., 0:len_ ]
+                w = w[..., 0:len_]
                 mels.append(w)
         mel = torch.cat(mels, dim=-1)
         wavs = []
