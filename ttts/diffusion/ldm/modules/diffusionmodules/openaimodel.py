@@ -197,6 +197,8 @@ class ResBlock(TimestepBlock):
         use_checkpoint=False,
         up=False,
         down=False,
+        use_attention=False,
+        num_heads=8,
     ):
         super().__init__()
         self.channels = channels
@@ -206,11 +208,16 @@ class ResBlock(TimestepBlock):
         self.use_conv = use_conv
         self.use_checkpoint = use_checkpoint
         self.use_scale_shift_norm = use_scale_shift_norm
+        self.use_attention = use_attention
 
+        if use_attention:
+            res_module = AttentionBlock(channels, num_heads, -1, False, False)
+        else:
+            res_module = conv_nd(dims, channels, self.out_channels, 3, padding=1)
         self.in_layers = nn.Sequential(
             normalization(channels),
             nn.SiLU(),
-            conv_nd(dims, channels, self.out_channels, 3, padding=1),
+            res_module,
         )
 
         self.updown = up or down

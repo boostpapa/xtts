@@ -91,6 +91,7 @@ class BaseModel(nn.Module):
         num_heads_upsample=-1,
         use_scale_shift_norm=False,
         resblock_updown=False,
+        use_attention_in_resblock=False,
         use_new_attention_order=False,
         use_spatial_transformer=False,    # custom transformer support
         transformer_depth=1,              # custom transformer support
@@ -192,6 +193,8 @@ class BaseModel(nn.Module):
                         dims=dims,
                         use_checkpoint=use_checkpoint,
                         use_scale_shift_norm=use_scale_shift_norm,
+                        use_attention=use_attention_in_resblock,
+                        num_heads=num_heads,
                     )
                 ]
                 ch = mult * model_channels
@@ -238,6 +241,8 @@ class BaseModel(nn.Module):
                         dims=dims,
                         use_checkpoint=use_checkpoint,
                         use_scale_shift_norm=use_scale_shift_norm,
+                        use_attention=use_attention_in_resblock,
+                        num_heads=num_heads,
                     )
                 )
             )
