@@ -300,7 +300,7 @@ class UnifiedVoice(nn.Module):
                  start_text_token=0, stop_text_token=1, number_mel_codes=8194, start_mel_token=8192, stop_mel_token=8193,
                  train_solo_embeddings=False, use_mel_codes_as_input=True,
                  checkpointing=True, types=1,
-                 condition_type="perceiver", condition_module=None):
+                 condition_num_latent=32, condition_type="perceiver", condition_module=None):
         """
         Args:
             layers: Number of layers in transformer stack.
@@ -337,7 +337,7 @@ class UnifiedVoice(nn.Module):
         self.max_conditioning_inputs = max_conditioning_inputs
         self.mel_length_compression = mel_length_compression
         self.condition_type = condition_type
-        self.cond_num = 32
+        self.cond_num = condition_num_latent
         self.cond_mask_pad = nn.ConstantPad1d((self.cond_num, 0), True)
         if condition_type == "perceiver":
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
