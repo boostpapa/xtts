@@ -342,17 +342,18 @@ class UnifiedVoice(nn.Module):
         if condition_type == "perceiver":
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
-        elif condition_type == "conformer_perceiver":
+        elif condition_type == "conformer_perceiver" or condition_type == "conformer_encoder":
             self.conditioning_encoder = ConformerEncoder(input_size=100,
                                                          output_size=condition_module['output_size'], 
                                                          linear_units=condition_module['linear_units'],
                                                          attention_heads=condition_module['attention_heads'], 
                                                          num_blocks=condition_module['num_blocks'],
                                                          input_layer=condition_module['input_layer'])
-            self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=condition_module['output_size'], 
-                                                        ff_mult=condition_module['perceiver_mult'], 
-                                                        heads=condition_module['attention_heads'],
-                                                        num_latents=self.cond_num)
+            if condition_type == "conformer_perceiver":
+                self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=condition_module['output_size'],
+                                                            ff_mult=condition_module['perceiver_mult'],
+                                                            heads=condition_module['attention_heads'],
+                                                            num_latents=self.cond_num)
         elif condition_type == "gst":
             self.gst_encoder = GST(100, model_dim)
         else:
@@ -491,11 +492,17 @@ class UnifiedVoice(nn.Module):
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
             speech_conditioning_input = self.conditioning_encoder(speech_conditioning_input)  # (b, d, s)
             conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, 32, d)
-        elif self.condition_type == "conformer_perceiver":
-            speech_conditioning_input, mask = self.conditioning_encoder(speech_conditioning_input.transpose(1, 2), cond_mel_lengths)  # (b, s, d)
-            #conds_mask = torch.cat([torch.ones((mask.shape[0], self.cond_num), dtype=torch.bool), mask.squeeze(1)], dim=1)
-            conds_mask = self.cond_mask_pad(mask.squeeze(1))
-            conds = self.perceiver_encoder(speech_conditioning_input, conds_mask)  # (b, 32, d)
+        elif self.condition_type == "conformer_perceiver" or self.condition_type == "conformer_encoder":
+            speech_conditioning_input, mask = self.conditioning_encoder(speech_conditioning_input.transpose(1, 2),
+                                                                        cond_mel_lengths)  # (b, s, d)
+            if self.condition_type == "conformer_perceiver":
+                #conds_mask = torch.cat([torch.ones((mask.shape[0], self.cond_num), dtype=torch.bool), mask.squeeze(1)], dim=1)
+                conds_mask = self.cond_mask_pad(mask.squeeze(1))
+                conds = self.perceiver_encoder(speech_conditioning_input, conds_mask)  # (b, 32, d)
+            elif self.condition_type == "conformer_encoder":
+                denom = torch.sum(mask, -1, keepdim=True)
+                conds = speech_conditioning_input.masked_fill_(mask, 0.0)  # (b, s, d)
+                conds = torch.sum(conds, dim=1, keepdim=True) / denom  # (b, 1, d)
         elif self.condition_type == "gst":
             if speech_conditioning_input.ndim == 4:
                 speech_conditioning_input = speech_conditioning_input.squeeze(1)
