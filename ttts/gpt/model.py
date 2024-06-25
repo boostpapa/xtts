@@ -494,14 +494,15 @@ class UnifiedVoice(nn.Module):
             conds = self.perceiver_encoder(speech_conditioning_input.transpose(1, 2))  # (b, 32, d)
         elif self.condition_type == "conformer_perceiver" or self.condition_type == "conformer_encoder":
             speech_conditioning_input, mask = self.conditioning_encoder(speech_conditioning_input.transpose(1, 2),
-                                                                        cond_mel_lengths)  # (b, s, d)
+                                                                        cond_mel_lengths)  # (b, s, d), (b, 1, s)
             if self.condition_type == "conformer_perceiver":
                 #conds_mask = torch.cat([torch.ones((mask.shape[0], self.cond_num), dtype=torch.bool), mask.squeeze(1)], dim=1)
                 conds_mask = self.cond_mask_pad(mask.squeeze(1))
                 conds = self.perceiver_encoder(speech_conditioning_input, conds_mask)  # (b, 32, d)
             elif self.condition_type == "conformer_encoder":
-                denom = torch.sum(mask, -1, keepdim=True)
-                conds = speech_conditioning_input.masked_fill_(mask, 0.0)  # (b, s, d)
+                denom = torch.sum(mask, -1, keepdim=True)   # (b, 1, 1)
+                #conds = speech_conditioning_input.masked_fill_(1-mask.transpose(1, 2), 0.0)  # (b, s, d)
+                conds = speech_conditioning_input * mask.transpose(1, 2)    # (b, s, d)
                 conds = torch.sum(conds, dim=1, keepdim=True) / denom  # (b, 1, d)
         elif self.condition_type == "gst":
             if speech_conditioning_input.ndim == 4:
