@@ -354,6 +354,9 @@ class UnifiedVoice(nn.Module):
                                                             ff_mult=condition_module['perceiver_mult'],
                                                             heads=condition_module['attention_heads'],
                                                             num_latents=self.cond_num)
+            elif condition_type == "conformer_encoder":
+                dim_context = condition_module['output_size']
+                self.proj_context = nn.Linear(dim_context, model_dim) if dim_context != model_dim else nn.Identity()
         elif condition_type == "gst":
             self.gst_encoder = GST(100, model_dim)
         else:
@@ -500,6 +503,7 @@ class UnifiedVoice(nn.Module):
                 conds_mask = self.cond_mask_pad(mask.squeeze(1))
                 conds = self.perceiver_encoder(speech_conditioning_input, conds_mask)  # (b, 32, d)
             elif self.condition_type == "conformer_encoder":
+                speech_conditioning_input = self.proj_context(speech_conditioning_input)
                 denom = torch.sum(mask, -1, keepdim=True)   # (b, 1, 1)
                 #conds = speech_conditioning_input.masked_fill_(1-mask.transpose(1, 2), 0.0)  # (b, s, d)
                 conds = speech_conditioning_input * mask.transpose(1, 2)    # (b, s, d)
