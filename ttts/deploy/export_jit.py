@@ -6,6 +6,7 @@ from omegaconf import OmegaConf
 import argparse
 import os
 import numpy as np
+import codecs
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
@@ -29,6 +30,15 @@ class TTSModel(torch.nn.Module):
     def __init__(self, args):
         super().__init__()
         self.cfg = OmegaConf.load(args.config)
+
+        if 'gpt_vocab' in self.cfg.dataset:
+            self.tokenizer = VoiceBpeTokenizer(self.cfg.dataset['gpt_vocab'])
+            self.use_spm = False
+        else:
+            self.tokenizer = spm.SentencePieceProcessor()
+            self.tokenizer.load(self.cfg.dataset['bpe_model'])
+            self.use_spm = True
+
         self.dvae = DiscreteVAE(**self.cfg.vqvae)
         dvae_path = self.cfg.dvae_checkpoint
         load_checkpoint(self.dvae, dvae_path)
@@ -150,16 +160,24 @@ class TTSModel(torch.nn.Module):
         wav = torch.cat(wavs, dim=1)
         return wav, mel
 
-
-def get_args():
-    parser = argparse.ArgumentParser(description='export your script model')
-    parser.add_argument('--config', type=str, required=True, help='config file')
-    parser.add_argument('--fp16',
-                        action='store_true',
-                        help='whether to export fp16 model, default false')
-    # args = parser.parse_args()
-    args, _ = parser.parse_known_args()
-    return args
+    def tokenize(self, sentense, lang):
+        if not self.use_spm:
+            norm_text, words = clean_text1(sentense, lang)
+            cleand_text = ' '.join(words)
+            # cleand_text = f"[{lang}] {cleand_text}"
+        else:
+            norm_text = text_normalize(sentense, lang)
+            cleand_text = norm_text
+            cleand_text = tokenize_by_CJK_char(cleand_text)
+            # cleand_text = f"[{lang}] {cleand_text}"
+            # cleand_text = cleand_text.replace(' ', '[SPACE]')
+            #print(cleand_text)
+            cleand_text = byte_encode(cleand_text)
+        #print(cleand_text)
+        sen_tokens = torch.IntTensor(self.tokenizer.encode(cleand_text))
+        sen_tokens = F.pad(sen_tokens, (1, 0), value=self.cfg.gpt.start_text_token)
+        sen_tokens = F.pad(sen_tokens, (0, 1), value=self.cfg.gpt.stop_text_token)
+        return sen_tokens
 
 
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/erbaHappyLow.wav'
@@ -288,6 +306,7 @@ def test():
     model.cuda()
 
     cfg = OmegaConf.load(args.config)
+
     audio, sr = torchaudio.load(cond_audio)
     if audio.shape[0] > 1:
         audio = audio[0].unsqueeze(0)
@@ -357,13 +376,85 @@ def test():
     torchaudio.save('gen.wav', wav.type(torch.int16), 24000)
 
 
+def get_args():
+    parser = argparse.ArgumentParser(description='export your script model')
+    parser.add_argument('--config', type=str, required=True, help='config file')
+    parser.add_argument('--fp16',
+                        action='store_true',
+                        help='whether to export fp16 model, default false')
+    parser.add_argument('--testlist', type=str, help='test filelist')
+    parser.add_argument('--outdir', type=str, help='results output dir')
+    # args = parser.parse_args()
+    args, _ = parser.parse_known_args()
+    return args
+
+
 def main():
     args = get_args()
-    # No need gpu for model export
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    print(args)
     model = TTSModel(args)
+    os.environ['CUDA_VISIBLE_DEVICES'] = '3'
     # Export jit torch script model
     model.eval()
+    model.cuda()
+
+    cfg = OmegaConf.load(args.config)
+
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
+
+    # key|prompt_audio|lang|text
+    with codecs.open(args.testlist, "r", encoding='utf-8') as flist:
+        lines = flist.readlines()
+
+    for line in lines:
+        strs = line.strip().split("|")
+        key = strs[0]
+        prompt_audio = strs[1]
+        lang = strs[2]
+        text = strs[3]
+
+        audio, sr = torchaudio.load(prompt_audio)
+        if audio.shape[0] > 1:
+            audio = audio[0].unsqueeze(0)
+        audio = torchaudio.transforms.Resample(sr, 24000)(audio)
+        cond_mel = MelSpectrogramFeatures()(audio).cuda()
+        print(f"cond_mel shape: {cond_mel.shape}")
+
+        sentences = text_to_sentences(text, lang)
+        print(sentences)
+
+        sens_tokens = []
+        for sen in sentences:
+            sen = sen.strip().lower()
+            print(sen)
+            sen_tokens = model.tokenize(sen, lang)
+            sens_tokens.append(sen_tokens)
+
+        text_lens = [len(x) for x in sens_tokens]
+        max_text_len = max(text_lens)
+        texts_token = []
+        for sen_tokens in sens_tokens:
+            sen_tokens = F.pad(sen_tokens, (0, max_text_len - len(sen_tokens)), value=cfg.gpt.stop_text_token)
+            texts_token.append(sen_tokens)
+        padded_texts = torch.stack(texts_token).cuda()
+        text_lens = torch.IntTensor(text_lens)
+
+        bz = 1
+        mels = []
+        wavs = []
+        for i in range(0, len(sens_tokens), bz):
+            texts_tokens = padded_texts[i:i+bz]
+            token_lens = text_lens[i:i+bz]
+            cond_mels = cond_mel.repeat(len(texts_tokens), 1, 1)
+            wav, mel = model(cond_mels, texts_tokens, token_lens)
+            wavs.append(wav)
+            mels.append(mel)
+
+        #mel = torch.cat(mels, -1)
+        #np.save("gen.npy", mel.detach().cpu().numpy())
+        wav = torch.cat(wavs, dim=1).cpu()
+        torchaudio.save(f"{args.outdir}/{key}.wav", wav.type(torch.int16), 24000)
 
 
 if __name__ == '__main__':
