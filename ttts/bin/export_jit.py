@@ -6,7 +6,6 @@ import argparse
 import os
 import numpy as np
 import codecs
-import time
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
@@ -73,26 +72,6 @@ class TTSModel(torch.nn.Module):
                                    model_var_type='learned_range', loss_type='mse',
                                    betas=get_named_beta_schedule('linear', 1000),
                                    conditioning_free=True, ramp_conditioning_free=False, conditioning_free_k=2., sampler='dpm++2m')
-            
-        self.codes_time = .0
-        self.latent_time = .0
-        self.diffusion_time = .0
-        self.vocos_time = .0
-
-
-    def reset_time(self,):
-        self.codes_time = .0
-        self.latent_time = .0
-        self.diffusion_time = .0
-        self.vocos_time = .0
-
-
-    def statistics_info(self,):
-        print(f"codec time: {self.codes_time}s") 
-        print(f"latent time: {self.latent_time}s") 
-        print(f"diffusion time: {self.diffusion_time}s") 
-        print(f"vocoder time: {self.vocos_time}s") 
-        
 
     def forward(self, cond_mel: torch.Tensor,
                 text_tokens: torch.IntTensor, text_lens: torch.IntTensor):
@@ -101,7 +80,6 @@ class TTSModel(torch.nn.Module):
         print(cond_mel_lengths)
         print(text_tokens)
 
-        start_time = time.time()
         with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
             codes = self.gpt.inference_speech(cond_mel,
                                         text_tokens,
@@ -115,8 +93,6 @@ class TTSModel(torch.nn.Module):
                                         num_beams=3,
                                         repetition_penalty=15.0,
                                         max_generate_length=600)
-        self.codes_time += (time.time()-start_time)
-        
         #codes = codes[:, :-2]
         print(codes)
         print(f"codes shape: {codes.shape}")
@@ -164,7 +140,6 @@ class TTSModel(torch.nn.Module):
         '''
 
         with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
-            start_time = time.time()
             latent = self.gpt(cond_mel,
                         text_tokens,
                         text_lens,
@@ -172,20 +147,15 @@ class TTSModel(torch.nn.Module):
                         code_lens*self.gpt.mel_length_compression,
                         cond_mel_lengths=cond_mel_lengths,
                         return_latent=True, clip_inputs=False).transpose(1, 2)
-            self.latent_time += (time.time()-start_time)
             print(f"latent shape: {latent.shape}")
 
             diffusion_conditioning = normalize_tacotron_mel(cond_mel)
             upstride = self.gpt.mel_length_compression / 256
-            start_time = time.time()
             mel = do_spectrogram_diffusion(self.diffusion, self.diffuser, latent, diffusion_conditioning,
                                        upstride, temperature=1.0)
-            self.diffusion_time += (time.time()-start_time)
             #mel = mel[..., :int(-upstride)]
             print(f"mel shape: {mel.shape}")
-            start_time = time.time()
             wav = self.vocos.decode(mel)
-            self.vocos_time += (time.time()-start_time)
 
         '''
         codes = np.load("/speechfs01/users/wd007/tts/src/bilibili/bilibili_tts/codes.npy")
@@ -256,6 +226,7 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xuyuanshen.wav
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/guanguan.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/ham_male1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/taylor1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/duyujiao.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei1.wav'
@@ -327,13 +298,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yangshi_zhaopi
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sunwukong.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/split2_J5_TTS_女性_愤怒_4.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sange1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/BaGe.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/LiGong.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/XiaoXin.wav'
-cond_audio = '/speechfs01/data/tts/ugc/guichu/20240719/process/flac_cut/guichu_sanguo_caocao_4.flac'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/BaGe.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/BaGe1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
 
 text = "是谁给你的胆量这么跟我说话，嗯? 是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
 text = "历史将永远记住同志们的杰出创造和奉献，党和人民感谢你们。"
@@ -412,17 +376,15 @@ text="天之道，有所得，必有所失，现实就是这样的，有所得�
 text = "斯塔西亚，不要睡，睁开眼睛, 你不是一直想回到洛伦去吗？洛伦啊，你的故乡，那里有海，有草原，有脆脆绵绵的朝夕果…你在听吗，呜呜…斯塔西亚，求你…睁开眼睛看看。"
 text = "望着空荡荡的房间，昔日共度的美好时光历历在目，如今却物是人非，泪水止不住地滑落，心如刀割。"
 text = "准确点说，小森林是一部美食类电影食物佳肴，贯穿了柿子的寒暑交替四十三餐。"
+text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少"
 text = "顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。"
+text="人间灯火倒映湖中，她的渴望让静水泛起涟漪。若代价只是孤独，那就让这份愿望肆意流淌。流入她所注视的世间，也流入她如湖水般澄澈的目光。"
 text="你们这个是什么群啊，你们这是害人不浅啊你们这个群！"
 text="停靠在码头的LNG液化天然气运输船，是国际上公认的高技术、高附加值、高可靠性的船舶。目前沪东中华手持LNG船订单五十多艘，生产任务排到二零三一年。"
 text = "你们这个是什么群啊，你们这是害人不浅啊你们这个群！谁是群主，出来！真的太过分了。你们搞这个群干什么？我儿子每一科的成绩都不过那个平均分呐，他现在初二，你叫我儿子怎么办啊？他现在还不到高中啊？"
 text="我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵. 我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵. 我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵. 我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
 text = "是谁给你的胆量这么跟我说话，嗯, 是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
 text = "接下来给大家介绍一个团购产品--深圳绿景酒店1晚加双人下午茶。首先，让我们来看看这个团购的价格,这个团购包含的房间门市价是每晚1888元，直播间售价1晚住宿加其他项目只需要1618元。接下来，我们来详细介绍一下这个团购的各个项目。首先是住宿项目，房型有高级双床房或高级大床房，可任选其中一个房型。这两种房型都有38平米的面积，位于8-12层，视野开阔，房间内有窗户，可以欣赏室外的城景或花园景,无论是商务出差还是休闲旅游，都能满足您的需求。其次是双人下午茶项目，这个项目包含了精美的下午茶套餐，让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
-text="哪怕和你吵架了，哪怕和你闹别扭了。我都会一直关心你，担心你。保护你。因为你是我最爱的小白。"
-text="人间灯火倒映湖中，她的渴望让静水泛起涟漪。若代价只是孤独，那就让这份愿望肆意流淌。流入她所注视的世间，也流入她如湖水般澄澈的目光。"
-text="宁教我负天下人，休教天下人负我."
-text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少"
 
 
 
@@ -497,7 +459,7 @@ def test():
     padded_texts = torch.stack(texts_token).cuda()
     text_lens = torch.IntTensor(text_lens)
 
-    bz = 3
+    bz = 1
     mels = []
     wavs = []
     cond_mel1 = cond_mel.squeeze(dim=0)
@@ -550,7 +512,6 @@ def main():
     with codecs.open(args.testlist, "r", encoding='utf-8') as flist:
         lines = flist.readlines()
 
-    model.reset_time()
     for line in lines:
         strs = line.strip().split("|")
         key = strs[0]
@@ -584,7 +545,7 @@ def main():
         padded_texts = torch.stack(texts_token).cuda()
         text_lens = torch.IntTensor(text_lens)
 
-        bz = 3
+        bz = 1
         mels = []
         wavs = []
         for i in range(0, len(sens_tokens), bz):
@@ -599,7 +560,6 @@ def main():
         #np.save("gen.npy", mel.detach().cpu().numpy())
         wav = torch.cat(wavs, dim=1).cpu()
         torchaudio.save(f"{args.outdir}/{key}.wav", wav.type(torch.int16), 24000)
-    model.statistics_info()
 
 
 if __name__ == '__main__':
