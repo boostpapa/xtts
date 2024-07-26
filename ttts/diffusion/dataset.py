@@ -85,7 +85,7 @@ class DiffusionDataset(torch.utils.data.Dataset):
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
             #print(f"Info: {wav_path} processing Successed.")
-            refer_wav_clip = get_prompt_slice(refer_wav, 4, 1, self.sample_rate, self.is_eval)
+            refer_wav_clip = get_prompt_slice(refer_wav, 4, 2, self.sample_rate, self.is_eval)
             mel_refer = self.mel_extractor(refer_wav_clip)[0]
 
             #mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
@@ -109,7 +109,7 @@ class DiffusionDataset(torch.utils.data.Dataset):
         return len(self.datalist)
 
 
-class DiffusionCollater():
+class DiffusionCollator():
 
     def __init__(self):
         pass
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     }
     cfg = json.load(open('ttts/diffusion/config.json'))
     ds = DiffusionDataset(cfg)
-    dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=DiffusionCollater())
+    dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=DiffusionCollator())
     i = 0
     m = []
     max_text = 0

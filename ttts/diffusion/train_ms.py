@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from ttts.utils.infer_utils import load_model
 from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, summarize, update_moving_average
-from ttts.diffusion.dataset import DiffusionDataset, DiffusionCollater
+from ttts.diffusion.dataset import DiffusionDataset, DiffusionCollator
 from ttts.diffusion.model import DiffusionTts
 import torch
 import os
@@ -100,9 +100,9 @@ class Trainer(object):
         self.train_dataset = DiffusionDataset(self.cfg, self.cfg.dataset['training_files'])
         self.eval_dataset = DiffusionDataset(self.cfg, self.cfg.dataset['validation_files'])
         self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader,
-                                           collate_fn=DiffusionCollater())
+                                           collate_fn=DiffusionCollator())
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader,
-                                          collate_fn=DiffusionCollater())
+                                          collate_fn=DiffusionCollator())
 
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
@@ -134,6 +134,10 @@ class Trainer(object):
             model_pth = self.cfg.train['checkpoint']
             self.global_step, self.start_epoch = load_checkpoint(self.diffusion, model_pth)
             print(">> Diffusion weights restored from checkpoint:", model_pth)
+        elif 'pretrain_model' in self.cfg.train:
+            model_pth = self.cfg.train['pretrain_model']
+            load_pretrain_modules(self.diffusion, model_pth)
+            print(">> Diffusion weights initialize with pretrain model:", model_pth)
         if 'step' in self.cfg.train:
             self.global_step = self.cfg.train['step']
         if 'start_epoch' in self.cfg.train:

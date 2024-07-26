@@ -90,6 +90,7 @@ def load_trained_modules(model: torch.nn.Module, model_path):
     if os.path.isfile(model_path):
         logging.info(f'Checkpoint: loading from checkpoint {model_path} for CPU')
         model_state_dict = torch.load(model_path, map_location='cpu')
+        model_state_dict = model_state_dict['model'] if 'model' in model_state_dict else model_state_dict
         modules = filter_modules(model_state_dict, main_state_dict)
         partial_state_dict = OrderedDict()
         for key, value in model_state_dict.items():
@@ -110,6 +111,7 @@ def load_pretrain_modules(model: torch.nn.Module, model_path):
     if os.path.isfile(model_path):
         logging.info(f'Checkpoint: loading from pretrain model {model_path} for CPU')
         pretrain_state_dict = torch.load(model_path, map_location='cpu')
+        pretrain_state_dict = pretrain_state_dict['model'] if 'model' in pretrain_state_dict else pretrain_state_dict
         partial_state_dict = OrderedDict()
         for pkey in pretrain_state_dict:
             used = False
@@ -119,7 +121,7 @@ def load_pretrain_modules(model: torch.nn.Module, model_path):
                     logging.warning(f'{pkey} --> {key}')
                     used = True
             if not used:
-                logging.warning(f'{pkey} uninitialized')
+                logging.warning(f'{pkey} in pretrain model uninitialized')
         state_dict.update(partial_state_dict)
     else:
         logging.warning("model was not found : %s", model_path)
