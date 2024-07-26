@@ -27,14 +27,32 @@ class GptTTSDataset(torch.utils.data.Dataset):
             self.tokenizer = spm.SentencePieceProcessor()
             self.tokenizer.load(cfg.dataset['bpe_model'])
             self.use_spm = True
+        
+        self.prompt = cfg.dataset['prompt'] if 'prompt' in cfg.dataset else "random"
+        print(f"Warning: get prompt wav in {self.prompt}")
+
+        if self.prompt == "order":
+            self.spk2wav = defaultdict(dict)
+        else:
+            self.spk2wav = defaultdict(list)
+
         self.datalist = []
-        self.spk2wav = defaultdict(list)
         with open(datafile, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.datalist.append(line.strip())
                 # key, wav_path, spkid, language, raw_text, cleand_text
                 strs = line.strip().split("|")
-                self.spk2wav[strs[2]].append(strs[1])
+                if self.prompt == "order":
+                    idx = int(strs[-1])
+                    self.spk2wav[strs[2]][idx] = strs[1]
+                else:
+                    self.spk2wav[strs[2]].append(strs[1])
+        '''
+        random.shuffle(self.datalist)
+        print(f"Warning: datalist random shuffled")
+        '''
+        for i in range(0, 3):
+            print(self.datalist[i])
 
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
@@ -72,6 +90,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             spkid = strs[2]
 
             wave = load_audio(wav_path, self.sample_rate)
+            #print(f"wave.shape: {wave.shape}")
             if wave is None:
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
@@ -80,7 +99,16 @@ class GptTTSDataset(torch.utils.data.Dataset):
             raw_mel = mel
             #print(f"raw_mel.shape: {raw_mel.shape}")
 
-            cond_wav_path = random.choice(self.spk2wav[spkid])
+            if self.prompt == "order":
+                idx = int(strs[-1])
+                if idx > 0 and len(self.spk2wav[spkid]) > 1:
+                   idx -= 1 
+                elif idx == 0 and len(self.spk2wav[spkid]) > 1:
+                    idx = 1
+                    
+                cond_wav_path = self.spk2wav[spkid][idx]
+            else:
+                cond_wav_path = random.choice(self.spk2wav[spkid])
             cond_wave = load_audio(cond_wav_path, self.sample_rate)
             #cond_wave = wave
             if cond_wave is None:
@@ -154,22 +182,17 @@ class GptTTSCollater():
 
 
 if __name__ == '__main__':
-    params = {
-        'mode': 'gpt_tts',
-        'path': 'E:\\audio\\LJSpeech-1.1\\ljs_audio_text_train_filelist.txt',
-        'phase': 'train',
-        'n_workers': 0,
-        'batch_size': 16,
-        'mel_vocab_size': 512,
-    }
-    json_cfg = json.load(open('configs/config.json'))
-    cfg = AttrDict(json_cfg)
-    ds = GptTTSDataset(cfg, cfg['dataset']['validation_files'])
-    dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=GptTTSCollater(cfg))
+    from omegaconf import OmegaConf
+    from torch.utils.data import DataLoader
+    #json_cfg = json.load(open('configs/config.json'))
+    #cfg = AttrDict(json_cfg)
+    cfg = OmegaConf.load(open('configs/config_test.yaml'))
+    train_dataset = GptTTSDataset(cfg, cfg.dataset['training_files'], is_eval=False)
+    train_dataloader = DataLoader(train_dataset, **cfg.dataloader, collate_fn=GptTTSCollater(cfg))
     i = 0
     m = []
     max_text = 0
     max_mel = 0
-    for batch in tqdm(dl):
-        #print(batch['padded_raw_mel'].shape, batch['raw_mel_lengths'])
-        break
+    #for batch in tqdm(train_dataloader):
+    for batch in train_dataloader:
+        print(batch['padded_raw_mel'].shape, batch['raw_mel_lengths'])
