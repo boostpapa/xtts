@@ -1,5 +1,6 @@
 import os
 import random
+import json
 
 import torch
 import torch.nn.functional as F
@@ -15,8 +16,6 @@ from ttts.utils.utils import tokenize_by_CJK_char
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 from ttts.utils.utils import load_audio, get_prompt_slice
-import json
-import os
 
 
 class DiffusionDataset(torch.utils.data.Dataset):
@@ -28,14 +27,32 @@ class DiffusionDataset(torch.utils.data.Dataset):
             self.tokenizer = spm.SentencePieceProcessor()
             self.tokenizer.load(cfg.dataset['bpe_model'])
             self.use_spm = True
+        
+        self.prompt = cfg.dataset['prompt'] if 'prompt' in cfg.dataset else "random"
+        print(f"Warning: get prompt wav in {self.prompt}")
+
+        if self.prompt == "order":
+            self.spk2wav = defaultdict(dict)
+        else:
+            self.spk2wav = defaultdict(list)
+
         self.datalist = []
-        self.spk2wav = defaultdict(list)
         with open(datafile, 'r', encoding='utf8') as fin:
             for line in fin:
                 self.datalist.append(line.strip())
                 # key, wav_path, spkid, language, raw_text, cleand_text
                 strs = line.strip().split("|")
-                self.spk2wav[strs[2]].append(strs[1])
+                if self.prompt == "order":
+                    idx = int(strs[-1])
+                    self.spk2wav[strs[2]][idx] = strs[1]
+                else:
+                    self.spk2wav[strs[2]].append(strs[1])
+        '''
+        random.shuffle(self.datalist)
+        print(f"Warning: datalist random shuffled")
+        '''
+        for i in range(0, 3):
+            print(self.datalist[i])
 
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
@@ -79,7 +96,16 @@ class DiffusionDataset(torch.utils.data.Dataset):
             mel_raw = self.mel_extractor(wav)[0]
             # print(f"mel_raw.shape: {mel_raw.shape}")
 
-            refer_wav_path = random.choice(self.spk2wav[spkid])
+            if self.prompt == "order":
+                idx = int(strs[-1])
+                if idx > 0 and len(self.spk2wav[spkid]) > 1:
+                   idx -= 1 
+                elif idx == 0 and len(self.spk2wav[spkid]) > 1:
+                    idx = 1
+                    
+                refer_wav_path = self.spk2wav[spkid][idx]
+            else:
+                refer_wav_path = random.choice(self.spk2wav[spkid])
             refer_wav = load_audio(refer_wav_path, self.sample_rate)
             if refer_wav is None:
                 print(f"Warning: {wav_path} loading error, skip!")
