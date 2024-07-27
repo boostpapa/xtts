@@ -70,13 +70,13 @@ class TTSModel(torch.nn.Module):
             input_data[3] = self.dvae.get_codebook_indices(input_data[3])
 
             # latent given vq
-            if args.dump_latent or args.dump_diffusion:
+            if args.dump_latent or args.dump_diffusion or args.dump_wav:
                 latent = self.gpt(*input_data, return_latent=True, clip_inputs=False).transpose(1, 2) #(b, d, s)
                 latent_lens = torch.ceil(batch['wav_lens'] / self.gpt.mel_length_compression).long()
                 lens = latent_lens
                 dump_data = latent
             # mel given latent
-            if args.dump_diffusion:
+            if args.dump_diffusion or args.dump_wav:
                 cond_mel = input_data[0]
                 diffusion_conditioning = normalize_tacotron_mel(cond_mel[..., :300])
                 upstride = self.gpt.mel_length_compression / 256
@@ -85,12 +85,18 @@ class TTSModel(torch.nn.Module):
                 mel_lens = batch['wav_lens'] / 256
                 lens = mel_lens
                 dump_data = mel
+            if args.dump_wav:
+                wav = self.vocos.decode(mel)
+                wav_lens = batch['wav_lens']
+                lens = wav_lens
+                dump_data = wav
+
             # key, dump data
             dump_datas = []
             i = 0
             for m, len_ in zip(dump_data, lens):
                 m = m[..., 0:int(len_)]
-                item = [keys[i], m.cpu().numpy()]
+                item = [keys[i], m]
                 dump_datas.append(item)
                 i += 1
             return dump_datas
@@ -103,8 +109,12 @@ class TTSModel(torch.nn.Module):
                 dump_datas = self.infer_batch(batch, args)
             for item in dump_datas:
                 key, data = item
-                print(f"{args.outdir}/{key}.npy")
-                np.save(f"{args.outdir}/{key}.npy", data)
+                if not args.dump_wav:
+                    print(f"{args.outdir}/{key}.npy")
+                    np.save(f"{args.outdir}/{key}.npy", data.cpu().numpy())
+                else:
+                    print(f"{args.outdir}/{key}.wav")
+                    torchaudio.save(f"{args.outdir}/{key}.wav", data.type(torch.int16), 24000)
 
 
 def get_args():
