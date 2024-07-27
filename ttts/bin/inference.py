@@ -78,7 +78,8 @@ class TTSModel(torch.nn.Module):
             # mel given latent
             if args.dump_diffusion or args.dump_wav:
                 cond_mel = input_data[0]
-                diffusion_conditioning = normalize_tacotron_mel(cond_mel[..., :300])
+                #diffusion_conditioning = normalize_tacotron_mel(cond_mel[..., :300])
+                diffusion_conditioning = normalize_tacotron_mel(cond_mel)
                 upstride = self.gpt.mel_length_compression / 256
                 mel = do_spectrogram_diffusion(self.diffusion, self.diffuser, latent, diffusion_conditioning,
                                                upstride, temperature=1.0)
@@ -87,6 +88,8 @@ class TTSModel(torch.nn.Module):
                 dump_data = mel
             if args.dump_wav:
                 wav = self.vocos.decode(mel)
+                wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 0.90 * wav
+                torch.clip(wav, -32767.0, 32767.0)
                 wav_lens = batch['wav_lens']
                 lens = wav_lens
                 dump_data = wav
@@ -96,7 +99,7 @@ class TTSModel(torch.nn.Module):
             i = 0
             for m, len_ in zip(dump_data, lens):
                 m = m[..., 0:int(len_)]
-                item = [keys[i], m]
+                item = [keys[i], m.cpu()]
                 dump_datas.append(item)
                 i += 1
             return dump_datas
@@ -111,10 +114,10 @@ class TTSModel(torch.nn.Module):
                 key, data = item
                 if not args.dump_wav:
                     print(f"{args.outdir}/{key}.npy")
-                    np.save(f"{args.outdir}/{key}.npy", data.cpu().numpy())
+                    np.save(f"{args.outdir}/{key}.npy", data.numpy())
                 else:
                     print(f"{args.outdir}/{key}.wav")
-                    torchaudio.save(f"{args.outdir}/{key}.wav", data.type(torch.int16), 24000)
+                    torchaudio.save(f"{args.outdir}/{key}.wav", data.unsqueeze(0).type(torch.int16), 24000)
 
 
 def get_args():
@@ -126,6 +129,7 @@ def get_args():
     parser.add_argument('--dump_vqvae', action='store_true', help='dump vqvae codes feature')
     parser.add_argument('--dump_latent', action='store_true', help='dump gpt latent feature')
     parser.add_argument('--dump_diffusion', action='store_true', help='dump diffusion mel feature')
+    parser.add_argument('--dump_wav', action='store_true', help='dump diffusion wav')
     parser.add_argument('--filelist', type=str, help='dump filelist')
     parser.add_argument('--outdir', type=str, default="outdir", help='results output dir')
     # args = parser.parse_args()
