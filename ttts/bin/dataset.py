@@ -130,7 +130,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
         return len(self.datalist)
 
 
-class GptTTSCollater():
+class GptTTSCollator():
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -163,7 +163,7 @@ class GptTTSCollater():
         wavs = []
         # This is the sequential "background" tokens that are used as padding for text tokens, as specified in the DALLE paper.
         for sample in batch:
-            text, raw_mel, cond_mel, wav = sample
+            text, raw_mel, cond_mel, wav, key = sample
             text = F.pad(text, (0, max_text_len-len(text)), value=0)
             texts.append(text)
             raw_mels.append(F.pad(raw_mel, (0, max_raw_mel_len-raw_mel.shape[1]), value=0))

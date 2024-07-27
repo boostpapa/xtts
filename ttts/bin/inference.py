@@ -5,6 +5,7 @@ import argparse
 import os
 import numpy as np
 
+from torch.utils.data import DataLoader
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
 from ttts.utils.checkpoint import load_checkpoint
@@ -13,10 +14,10 @@ from ttts.diffusion.aa_model import AA_diffusion
 from ttts.utils.diffusion import SpacedDiffusion, space_timesteps, get_named_beta_schedule
 from ttts.diffusion.aa_model import do_spectrogram_diffusion, normalize_tacotron_mel
 from vocos import Vocos
-from ttts.bin.dataset import GptTTSDataset
+from ttts.bin.dataset import GptTTSDataset, GptTTSCollator
 
 
-class TTSModel:
+class TTSModel(torch.nn.Module):
     def __init__(self, args):
         super().__init__()
         self.cfg = OmegaConf.load(args.config)
@@ -61,7 +62,8 @@ class TTSModel:
         with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
             # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
             input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
-                          batch['padded_raw_mel'], batch['wav_lens']]
+                          batch['padded_raw_mel'], batch['wav_lens'], batch['cond_mel_lengths']]
+            input_data = [d.cuda() for d in input_data]
             keys = batch['keys']
 
             # get vqvae codes from raw mel
@@ -69,16 +71,14 @@ class TTSModel:
 
             # latent given vq
             if args.dump_latent or args.dump_diffusion:
-                latent = self.gpt(*input_data,
-                                  cond_mel_lengths=batch['cond_mel_lengths'],
-                                  return_latent=True, clip_inputs=False)
+                latent = self.gpt(*input_data, return_latent=True, clip_inputs=False).transpose(1, 2) #(b, d, s)
                 latent_lens = torch.ceil(batch['wav_lens'] / self.gpt.mel_length_compression).long()
                 lens = latent_lens
                 dump_data = latent
             # mel given latent
             if args.dump_diffusion:
                 cond_mel = input_data[0]
-                diffusion_conditioning = normalize_tacotron_mel(cond_mel)
+                diffusion_conditioning = normalize_tacotron_mel(cond_mel[..., :300])
                 upstride = self.gpt.mel_length_compression / 256
                 mel = do_spectrogram_diffusion(self.diffusion, self.diffuser, latent, diffusion_conditioning,
                                                upstride, temperature=1.0)
@@ -97,11 +97,13 @@ class TTSModel:
 
     def infer(self, args):
         eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
-        for batch_idx, batch in enumerate(eval_dataset):
-            dump_datas = self.infer_batch(batch, args)
+        eval_dataloader = DataLoader(eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollator(self.cfg))
+        for batch_idx, batch in enumerate(eval_dataloader):
+            with torch.no_grad():
+                dump_datas = self.infer_batch(batch, args)
             for item in dump_datas:
-                key = item[0]
-                data = item[1]
+                key, data = item
+                print(f"{args.outdir}/{key}.npy")
                 np.save(f"{args.outdir}/{key}.npy", data)
 
 
@@ -115,7 +117,7 @@ def get_args():
     parser.add_argument('--dump_latent', action='store_true', help='dump gpt latent feature')
     parser.add_argument('--dump_diffusion', action='store_true', help='dump diffusion mel feature')
     parser.add_argument('--filelist', type=str, help='dump filelist')
-    parser.add_argument('--outdir', type=str, help='results output dir')
+    parser.add_argument('--outdir', type=str, default="outdir", help='results output dir')
     # args = parser.parse_args()
     args, _ = parser.parse_known_args()
     return args
