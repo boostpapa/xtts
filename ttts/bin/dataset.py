@@ -124,7 +124,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             print(f"Warning: {wav_path} text len {text.shape[0]} exceed 300 or raw mel len {raw_mel.shape[1]} exceed 2400.")
             return None
 
-        return key, text, raw_mel, cond_mel, wav_length
+        return text, raw_mel, cond_mel, wav_length, key
 
     def __len__(self):
         return len(self.datalist)
@@ -155,6 +155,8 @@ class GptTTSCollater():
         wav_lens = [x[3] for x in batch]
         max_wav_len = max(wav_lens)
 
+        keys = [x[-1] for x in batch]
+
         texts = []
         raw_mels = []
         cond_mels = []
@@ -177,7 +179,8 @@ class GptTTSCollater():
             'raw_mel_lengths': LongTensor(raw_mel_lens),
             'padded_cond_mel': padded_cond_mel,
             'cond_mel_lengths': LongTensor(cond_mel_lens),
-            'wav_lens': LongTensor(wav_lens)
+            'wav_lens': LongTensor(wav_lens),
+            'keys': keys,
         }
 
 

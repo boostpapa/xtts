@@ -3,6 +3,7 @@ import torchaudio
 from omegaconf import OmegaConf
 import argparse
 import os
+import numpy as np
 
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
@@ -12,15 +13,10 @@ from ttts.diffusion.aa_model import AA_diffusion
 from ttts.utils.diffusion import SpacedDiffusion, space_timesteps, get_named_beta_schedule
 from ttts.diffusion.aa_model import do_spectrogram_diffusion, normalize_tacotron_mel
 from vocos import Vocos
-
-from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
-from ttts.gpt.dataset import GptTTSDataset
-import sentencepiece as spm
-from multiprocessing import Pool
+from ttts.bin.dataset import GptTTSDataset
 
 
 class TTSModel:
-
     def __init__(self, args):
         super().__init__()
         self.cfg = OmegaConf.load(args.config)
@@ -61,30 +57,52 @@ class TTSModel:
         if 'vocoder_model' in self.cfg:
             self.vocos = Vocos.from_pretrained(self.cfg.vocoder_model)
 
-    def infer(self):
-        eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
+    def infer_batch(self, batch, args):
         with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
-            for batch_idx, batch in enumerate(self.eval_dataloader):
-                # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
-                input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
-                                batch['padded_raw_mel'], batch['wav_lens']]
-                # get vqvae codes from raw mel
-                input_data[3] = self.dvae.get_codebook_indices(input_data[3])
+            # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
+            input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
+                          batch['padded_raw_mel'], batch['wav_lens']]
+            keys = batch['keys']
+
+            # get vqvae codes from raw mel
+            input_data[3] = self.dvae.get_codebook_indices(input_data[3])
+
+            # latent given vq
+            if args.dump_latent or args.dump_diffusion:
                 latent = self.gpt(*input_data,
                                   cond_mel_lengths=batch['cond_mel_lengths'],
                                   return_latent=True, clip_inputs=False)
-
+                latent_lens = torch.ceil(batch['wav_lens'] / self.gpt.mel_length_compression).long()
+                lens = latent_lens
+                dump_data = latent
+            # mel given latent
+            if args.dump_diffusion:
                 cond_mel = input_data[0]
                 diffusion_conditioning = normalize_tacotron_mel(cond_mel)
                 upstride = self.gpt.mel_length_compression / 256
                 mel = do_spectrogram_diffusion(self.diffusion, self.diffuser, latent, diffusion_conditioning,
                                                upstride, temperature=1.0)
-                mel_lens = batch['wav_lens']/256
-                mels = []
-                for m, len_ in zip(mel, mel_lens):
-                    m = m[..., 0:int(len_)]
-                    mels.append(m)
-                mel = torch.cat(mels, dim=-1)
+                mel_lens = batch['wav_lens'] / 256
+                lens = mel_lens
+                dump_data = mel
+            # key, dump data
+            dump_datas = []
+            i = 0
+            for m, len_ in zip(dump_data, lens):
+                m = m[..., 0:int(len_)]
+                item = [keys[i], m.cpu().numpy()]
+                dump_datas.append(item)
+                i += 1
+            return dump_datas
+
+    def infer(self, args):
+        eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
+        for batch_idx, batch in enumerate(eval_dataset):
+            dump_datas = self.infer_batch(batch, args)
+            for item in dump_datas:
+                key = item[0]
+                data = item[1]
+                np.save(f"{args.outdir}/{key}.npy", data)
 
 
 def get_args():
@@ -98,7 +116,6 @@ def get_args():
     parser.add_argument('--dump_diffusion', action='store_true', help='dump diffusion mel feature')
     parser.add_argument('--filelist', type=str, help='dump filelist')
     parser.add_argument('--outdir', type=str, help='results output dir')
-    parser.add_argument('-n', '--njobs', action='store', default=10, type=int, help='#jobs')
     # args = parser.parse_args()
     args, _ = parser.parse_known_args()
     return args
@@ -115,12 +132,11 @@ def main():
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
-
-
+    model.infer(args)
 
 
 if __name__ == '__main__':
-    # main()
+    main()
 
 
 
