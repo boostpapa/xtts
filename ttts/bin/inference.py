@@ -58,6 +58,12 @@ class TTSModel(torch.nn.Module):
         if 'vocoder_model' in self.cfg:
             self.vocos = Vocos.from_pretrained(self.cfg.vocoder_model)
 
+        self.eval_dataset = GptTTSDataset(self.cfg, args.filelist, is_eval=True)
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollator(self.cfg))
+
+        self.diffusion, self.gpt, self.dvae, self.vocos, self.eval_dataloader \
+            = self.accelerator.prepare(self.diffusion, self.gpt, self.dvae, self.vocos, self.eval_dataloader)
+
     def infer_batch(self, batch, args):
         with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
             # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
@@ -105,9 +111,7 @@ class TTSModel(torch.nn.Module):
             return dump_datas
 
     def infer(self, args):
-        eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
-        eval_dataloader = DataLoader(eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollator(self.cfg))
-        for batch_idx, batch in enumerate(eval_dataloader):
+        for batch_idx, batch in enumerate(self.eval_dataloader):
             with torch.no_grad():
                 dump_datas = self.infer_batch(batch, args)
             for item in dump_datas:
@@ -130,7 +134,7 @@ def get_args():
     parser.add_argument('--dump_latent', action='store_true', help='dump gpt latent feature')
     parser.add_argument('--dump_diffusion', action='store_true', help='dump diffusion mel feature')
     parser.add_argument('--dump_wav', action='store_true', help='dump diffusion wav')
-    parser.add_argument('--filelist', type=str, help='dump filelist')
+    parser.add_argument('--filelist', type=str, required=True, help='dump filelist')
     parser.add_argument('--outdir', type=str, default="outdir", help='results output dir')
     # args = parser.parse_args()
     args, _ = parser.parse_known_args()
