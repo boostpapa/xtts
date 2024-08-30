@@ -25,6 +25,7 @@ from torch.nn.parallel import DistributedDataParallel
 from env import AttrDict, build_env
 from meldataset import mel_spectrogram, MAX_WAV_VALUE
 from dataset import BigVGANDataset, BigVGANCollator
+from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 
 from bigvgan import BigVGAN
 from msf.msf_disc import Discriminators as MSFDiscriminator
@@ -111,6 +112,15 @@ def train(rank, a, h):
         )  # NOTE: accepts waveform as input
     else:
         fn_mel_loss_singlescale = F.l1_loss
+
+    if h.mel_type == "pytorch":
+        mel_pytorch = MelSpectrogramFeatures(sample_rate=h.sampling_rate,
+                                             n_fft=h.n_fft,
+                                             hop_length=h.hop_size,
+                                             win_length=h.win_size,
+                                             n_mels=h.num_mels,
+                                             mel_fmin=h.fmin, ).to(device)
+        print(f"Warning use torchaudio.transforms.MelSpectrogram extract mel.")
 
     # Print the model & number of parameters, and create or scan the latest checkpoint from checkpoints directory
     if rank == 0:
@@ -272,7 +282,7 @@ def train(rank, a, h):
                     h.fmax_for_loss,
                 )
                 min_t = min(y_mel.size(-1), y_g_hat_mel.size(-1))
-                val_err_tot += F.l1_loss(y_mel[...,:min_t], y_g_hat_mel[...,:min_t]).item()
+                val_err_tot += F.l1_loss(y_mel[..., :min_t], y_g_hat_mel[..., :min_t]).item()
 
                 # PESQ calculation. only evaluate PESQ if it's speech signal (nonspeech PESQ will error out)
                 if (
@@ -351,39 +361,36 @@ def train(rank, a, h):
         for i, batch in enumerate(train_loader):
             if rank == 0:
                 start_b = time.time()
-            #x, y, _, y_mel = batch
 
-            padded_mel = batch['padded_mel']
+            for key in batch:
+                batch[key] = batch[key].to(device)
+
             text = batch['padded_text']
             text_lens = batch['text_lengths']
-            wav_lens = batch['wav_lens']
-            mel_lens = batch['mel_lengths']
+            mel_refer = batch['padded_mel_refer']
+            mel_refer_len = batch['mel_refer_lens']
+            mel_infer = batch['padded_mel_infer']
+            mel_infer_len = batch['mel_infer_lens']
+            wav_infer = batch['padded_wav_infer']
+            wav_infer_lens = batch['wav_infer_lens']
+            wav_refer = batch['padded_wav_refer']
+            wav_refer_lens = batch['wav_refer_lens']
 
-            y_ = batch['padded_wav']
-            wav_ref = batch["padded_wav24k"]
-            wav24k_lens = batch['wav24k_lens']
-            mel_ref = mel_spectrogram(wav_ref.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size,
-                                      h.fmin, h.fmax_for_loss)
-
-            y_ = torch.autograd.Variable(y_.to(device, non_blocking=True))
-            mel_ref = torch.autograd.Variable(mel_ref.to(device, non_blocking=True))
-            wav24k_lens = torch.autograd.Variable(wav24k_lens.to(device, non_blocking=True))
-            mel_ref_lens = wav24k_lens // h.hop_size
-
-            padded_mel = torch.autograd.Variable(padded_mel.to(device, non_blocking=True))
-            text = torch.autograd.Variable(text.to(device, non_blocking=True))
-            text_lens = torch.autograd.Variable(text_lens.to(device, non_blocking=True))
-            wav_lens = torch.autograd.Variable(wav_lens.to(device, non_blocking=True))
-            mel_lens = torch.autograd.Variable(mel_lens.to(device, non_blocking=True))
+            y_ = wav_infer
+            if h.mel_type == "pytorch":
+                mel_ref = mel_refer
+            else:
+                mel_ref = mel_spectrogram(wav_refer.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size,
+                                          h.win_size, h.fmin, h.fmax_for_loss)
 
             with torch.no_grad():
-                padded_mel_code = dvae.get_codebook_indices(padded_mel)
-                latent = gpt(padded_mel,
+                mel_code = dvae.get_codebook_indices(mel_infer)
+                latent = gpt(mel_refer,
                              text,
                              text_lens,
-                             padded_mel_code,
-                             wav_lens,
-                             cond_mel_lengths=mel_lens,
+                             mel_code,
+                             wav_infer_lens,
+                             cond_mel_lengths=mel_refer_len,
                              return_latent=True,
                              clip_inputs=False,)
                 #latent = latent / std
@@ -391,7 +398,7 @@ def train(rank, a, h):
 
                 x = []
                 y = []
-                for wav, feat, len_ in zip(y_, latent, wav_lens):
+                for wav, feat, len_ in zip(y_, latent, wav_infer_lens):
                     # [T], [1024, T/1024], 1
                     start = 0
                     if len_ // 1024 - 1 > chunk:
@@ -405,31 +412,27 @@ def train(rank, a, h):
                 x = torch.stack(x)
                 y = torch.stack(y)
 
-                y_mel = mel_spectrogram(y, h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin,
-                                    h.fmax_for_loss)
+                if h.mel_type == "pytorch":
+                    y_mel = mel_pytorch(y)
+                else:
+                    y_mel = mel_spectrogram(y, h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin,
+                                        h.fmax_for_loss)
                 feats_lengths = torch.LongTensor([segment_size // 256 + 1] * y_mel.size(0))
-                #feats_lengths = torch.autograd.Variable(feats_lengths.to(device, non_blocking=True))
 
+            '''
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
             y_mel = y_mel.to(device, non_blocking=True)
             mel_ref = mel_ref.to(device, non_blocking=True)
-            wav24k_lens = wav24k_lens.to(device, non_blocking=True)
-            # mel_ref_lens = wav24k_lens // h.hop_size
+            '''
 
             y = y.unsqueeze(1)
-
-            y_g_hat, contrastive_loss = generator(x.transpose(1, 2), mel_ref.transpose(1, 2), mel_ref_lens)
-            y_g_hat_mel = mel_spectrogram(
-                y_g_hat.squeeze(1),
-                h.n_fft,
-                h.num_mels,
-                h.sampling_rate,
-                h.hop_size,
-                h.win_size,
-                h.fmin,
-                h.fmax_for_loss,
-            )
+            y_g_hat, contrastive_loss = generator(x.transpose(1, 2), mel_ref.transpose(1, 2), mel_refer_len)
+            if h.mel_type == "pytorch":
+                y_mel = mel_pytorch(y_g_hat.squeeze(1))
+            else:
+                y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size,
+                                              h.win_size, h.fmin, h.fmax_for_loss)
 
             optim_d.zero_grad()
 
@@ -499,7 +502,7 @@ def train(rank, a, h):
             loss_adv_msfd = torch.stack([torch.mean((1-w)**2) for w in d_res]).sum()
 
             if steps >= a.freeze_step:
-                loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+                loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel + loss_adv_msfd
             else:
                 print(f"[WARNING] using regression loss only for G for the first {a.freeze_step} steps")
                 loss_gen_all = loss_mel

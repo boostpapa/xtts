@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 import re
 import random
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -87,6 +88,46 @@ def get_prompt_slice(audio, max_audio_length=20, min_audio_length=3, sample_rate
     rand_end = rand_start + sample_length
     rel_clip = rel_clip[:, rand_start:rand_end]
     return rel_clip
+
+
+def sin_noise(frequency, amplitude, duration, length):
+    # frequency = 440  # 音调频率（Hz）80 1200
+    # amplitude = 1.0  # 振幅 0.2
+    # duration = 2.0   # 持续时间（秒）
+    # fs = 24000       # 采样率
+
+    # 创建电流声波形
+    t = np.linspace(0, duration, length, False)
+    x = np.sin(2*np.pi*frequency*t) * amplitude
+
+    return x
+
+
+def musa_noise(power, length, sample_rate=24000):
+    noise_power = power**2  # 0.0002 0.001
+    time_length = length / sample_rate
+    noise_scale = np.sqrt(noise_power * time_length)  # 计算噪声幅值
+    noise = np.random.normal(scale=noise_scale, size=length)
+
+    return noise
+
+
+def augment_audio(audio_data, sample_rate):
+    if random.uniform(0, 1) < 0.6:
+        return audio_data
+    else:
+        if random.uniform(0, 1) < 0.3:
+            frequency = random.randint(80, 12000)
+            amplitude = random.uniform(2, 5) * 0.1
+            duration = len(audio_data) / sample_rate
+            noise = sin_noise(frequency, amplitude, duration, len(audio_data))
+
+        else:
+            power = random.uniform(2, 10) * 0.0001
+            noise = musa_noise(power, len(audio_data), sample_rate)
+
+        noisy_audio = audio_data + noise
+        return noisy_audio
 
 
 def tokenize_by_CJK_char(line: str) -> str: 

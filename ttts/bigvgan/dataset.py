@@ -74,7 +74,7 @@ class BigVGANDataset(torch.utils.data.Dataset):
             wav_infer = wav[:, :end]
             wav_refer = wav[:, wav_len/2:wav_len]
 
-
+            '''
             audio_data = wav_refer[0].numpy()
             noisy_audio = augment_audio(audio_data, self.sample_rate)
             noisy_audio = torch.FloatTensor(noisy_audio).unsqueeze(0)
@@ -84,13 +84,17 @@ class BigVGANDataset(torch.utils.data.Dataset):
             noisy_audio = augment_audio(audio_data, self.sample_rate)
             noisy_audio = torch.FloatTensor(noisy_audio).unsqueeze(0)
             mel_infer = self.mel_extractor(noisy_audio)[0]
-            wav_infer_length = mel_infer.shape[1]*256
+            '''
+
+            mel_refer = self.mel_extractor(wav_refer)[0]
+            mel_infer = self.mel_extractor(wav_infer)[0]
+            #wav_infer_length = mel_infer.shape[1] * 256
 
         except:
             print(f"Warning: {wav_path} processing error, skip!")
             return None
 
-        return text_tokens, mel_refer, mel_infer, wav_infer, wav_infer_length, wav_refer
+        return text_tokens, mel_refer, mel_infer, wav_infer, wav_refer
 
     def __len__(self):
         return len(self.datalist)
@@ -111,10 +115,10 @@ class BigVGANCollator:
         mel_refer_lens = [x[1].shape[1] for x in batch]
         max_mel_refer_lens = max(mel_refer_lens)
 
-        mel_infer_lens = [x[2] for x in batch]
+        mel_infer_lens = [x[2].shape[1] for x in batch]
         max_mel_infer_lens = max(mel_infer_lens)
 
-        wav_infer_lens = [x[3] for x in batch]
+        wav_infer_lens = [x[3].shape[1] for x in batch]
         max_wav_infer_lens = max(wav_infer_lens)
 
         wav_refer_lens = [x[4].shape[1] for x in batch]
@@ -138,15 +142,18 @@ class BigVGANCollator:
         padded_text = torch.stack(texts)
         padded_mel_refer = torch.stack(mel_refers)
         padded_mel_infer = torch.stack(mel_infers)
-        padded_wav_infers = torch.stack(wav_infers)
-        padded_wav_refers = torch.stack(wav_refers)
+        padded_wav_infer = torch.stack(wav_infers)
+        padded_wav_refer = torch.stack(wav_refers)
 
         return {
             'padded_text': padded_text,
             'text_lengths': LongTensor(text_lens),
             'padded_mel_refer': padded_mel_refer,
+            'mel_refer_lens': LongTensor(mel_refer_lens),
             'padded_mel_infer': padded_mel_infer,
-            'padded_wav_infers': padded_wav_infers,
+            'mel_infer_lens': LongTensor(mel_infer_lens),
+            'padded_wav_infer': padded_wav_infer,
             'wav_infer_lens': LongTensor(wav_infer_lens),
-            'padded_wav_refers': padded_wav_refers,
+            'padded_wav_refer': padded_wav_refer,
+            'wav_refer_lens': LongTensor(wav_refer_lens),
         }
