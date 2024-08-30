@@ -3,7 +3,9 @@ import torchaudio
 from omegaconf import OmegaConf
 import argparse
 import os
+import numpy as np
 
+from torch.utils.data import DataLoader
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.model import UnifiedVoice
 from ttts.utils.checkpoint import load_checkpoint
@@ -12,23 +14,26 @@ from ttts.diffusion.aa_model import AA_diffusion
 from ttts.utils.diffusion import SpacedDiffusion, space_timesteps, get_named_beta_schedule
 from ttts.diffusion.aa_model import do_spectrogram_diffusion, normalize_tacotron_mel
 from vocos import Vocos
-
-from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
-from ttts.gpt.dataset import GptTTSDataset
-import sentencepiece as spm
-from multiprocessing import Pool
+from ttts.bin.dataset import GptTTSDataset, GptTTSCollator
+from accelerate import Accelerator
+from setproctitle import setproctitle
 
 
-class TTSModel:
-
+class TTSModel(torch.nn.Module):
     def __init__(self, args):
         super().__init__()
         self.cfg = OmegaConf.load(args.config)
 
+        # ['no', 'fp8', 'fp16', 'bf16']
         if args.fp16:
             self.dtype = torch.float16
+            precision = "fp16"
         else:  # fp32
             self.dtype = None
+            precision = "no"
+        print(">> inference precision:", precision)
+
+        self.accelerator = Accelerator(mixed_precision=precision, split_batches=True)
 
         self.dvae = DiscreteVAE(**self.cfg.vqvae)
         dvae_path = self.cfg.dvae_checkpoint
@@ -42,10 +47,12 @@ class TTSModel:
         load_checkpoint(self.gpt, gpt_path)
         self.gpt.eval()
         print(">> GPT weights restored from:", gpt_path)
+        '''
         if args.fp16:
             self.gpt.post_init_gpt2_config(use_deepspeed=True, kv_cache=True, half=args.fp16)
         else:
             self.gpt.post_init_gpt2_config(use_deepspeed=False, kv_cache=False, half=args.fp16)
+        '''
 
         ## load diffusion model ##
         self.diffusion = AA_diffusion(self.cfg)
@@ -61,30 +68,80 @@ class TTSModel:
         if 'vocoder_model' in self.cfg:
             self.vocos = Vocos.from_pretrained(self.cfg.vocoder_model)
 
-    def infer(self):
-        eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
-        with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
-            for batch_idx, batch in enumerate(self.eval_dataloader):
-                # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
-                input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
-                                batch['padded_raw_mel'], batch['wav_lens']]
-                # get vqvae codes from raw mel
-                input_data[3] = self.dvae.get_codebook_indices(input_data[3])
-                latent = self.gpt(*input_data,
-                                  cond_mel_lengths=batch['cond_mel_lengths'],
-                                  return_latent=True, clip_inputs=False)
+        self.eval_dataset = GptTTSDataset(self.cfg, args.filelist, is_eval=True)
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollator(self.cfg))
 
+        self.diffusion, self.gpt, self.dvae, self.vocos, self.eval_dataloader \
+            = self.accelerator.prepare(self.diffusion, self.gpt, self.dvae, self.vocos, self.eval_dataloader)
+
+    def infer_batch(self, batch, args):
+        device = self.accelerator.device
+        with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+            # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
+            input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
+                          batch['padded_raw_mel'], batch['wav_lens'], batch['cond_mel_lengths']]
+            input_data = [d.to(device) for d in input_data]
+            keys = batch['keys']
+
+            # get vqvae codes from raw mel
+            input_data[3] = self.dvae.get_codebook_indices(input_data[3])
+
+            # latent given vq
+            if args.dump_latent or args.dump_diffusion or args.dump_wav:
+                latent = self.gpt(*input_data, return_latent=True, clip_inputs=False).transpose(1, 2) #(b, d, s)
+                latent_lens = torch.ceil(batch['wav_lens'] / self.gpt.mel_length_compression).long()
+                lens = latent_lens
+                dump_data = latent
+            # mel given latent
+            if args.dump_diffusion or args.dump_wav:
                 cond_mel = input_data[0]
+                #diffusion_conditioning = normalize_tacotron_mel(cond_mel[..., :300])
                 diffusion_conditioning = normalize_tacotron_mel(cond_mel)
                 upstride = self.gpt.mel_length_compression / 256
                 mel = do_spectrogram_diffusion(self.diffusion, self.diffuser, latent, diffusion_conditioning,
-                                               upstride, temperature=1.0)
-                mel_lens = batch['wav_lens']/256
-                mels = []
-                for m, len_ in zip(mel, mel_lens):
-                    m = m[..., 0:int(len_)]
-                    mels.append(m)
-                mel = torch.cat(mels, dim=-1)
+                                               upstride, temperature=1.0, verbose=False)
+                mel_lens = batch['wav_lens'] / 256
+                lens = mel_lens
+                dump_data = mel
+            if args.dump_wav:
+                wav = self.vocos.decode(mel)
+                wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 0.90 * wav
+                torch.clip(wav, -32767.0, 32767.0)
+                wav_lens = batch['wav_lens']
+                lens = wav_lens
+                dump_data = wav
+
+            # key, dump data
+            dump_datas = []
+            i = 0
+            for m, len_ in zip(dump_data, lens):
+                m = m[..., 0:int(len_)]
+                m = m.unsqueeze(0).type(torch.int16).cpu() if args.dump_wav else m.clone().cpu()
+                item = [keys[i], m]
+                dump_datas.append(item)
+                i += 1
+            return dump_datas
+
+    def infer(self, args):
+        if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
+            self.dvae = self.dvae.module
+            self.gpt = self.gpt.module
+            self.diffusion = self.diffusion.module
+            self.vocos = self.vocos.module
+    
+        for batch_idx, batch in enumerate(self.eval_dataloader):
+            with torch.no_grad():
+                dump_datas = self.infer_batch(batch, args)
+            for item in dump_datas:
+                key, data = item
+                if not args.dump_wav:
+                    print(f"{args.outdir}/{key}.npy")
+                    np.save(f"{args.outdir}/{key}.npy", data.numpy())
+                    #print(f"{args.outdir}/{key}.pt")
+                    #torch.save(data, f"{args.outdir}/{key}.pt")
+                else:
+                    print(f"{args.outdir}/{key}.wav")
+                    torchaudio.save(f"{args.outdir}/{key}.wav", data, 24000)
 
 
 def get_args():
@@ -96,9 +153,9 @@ def get_args():
     parser.add_argument('--dump_vqvae', action='store_true', help='dump vqvae codes feature')
     parser.add_argument('--dump_latent', action='store_true', help='dump gpt latent feature')
     parser.add_argument('--dump_diffusion', action='store_true', help='dump diffusion mel feature')
-    parser.add_argument('--filelist', type=str, help='dump filelist')
-    parser.add_argument('--outdir', type=str, help='results output dir')
-    parser.add_argument('-n', '--njobs', action='store', default=10, type=int, help='#jobs')
+    parser.add_argument('--dump_wav', action='store_true', help='dump diffusion wav')
+    parser.add_argument('--filelist', type=str, required=True, help='dump filelist')
+    parser.add_argument('--outdir', type=str, default="outdir", help='results output dir')
     # args = parser.parse_args()
     args, _ = parser.parse_known_args()
     return args
@@ -111,16 +168,16 @@ def main():
     model = TTSModel(args)
     os.environ['CUDA_VISIBLE_DEVICES'] = '3'
     model.cuda()
+    setproctitle("dump_feature")
 
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
-
-
+    model.infer(args)
 
 
 if __name__ == '__main__':
-    # main()
+    main()
 
 
 
