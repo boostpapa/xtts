@@ -15,8 +15,6 @@ from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 
 
-cfg = OmegaConf.load('gpt.yaml')
-
 
 class BigVGANDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
@@ -37,7 +35,8 @@ class BigVGANDataset(torch.utils.data.Dataset):
         # self.hop_length = 1024
         # self.chunk = self.segment_size // self.hop_length
 
-        self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+        self.squeeze = cfg.dataset['squeeze']
+        self.sample_rate = cfg.dataset['sample_rate']
         self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
         self.is_eval = is_eval
 
@@ -69,10 +68,10 @@ class BigVGANDataset(torch.utils.data.Dataset):
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
 
-            wav_len = int(wav.shape(1)/2048)*2048
-            end = 4*self.sample_rate if wav_len/2 > 4*self.sample_rate else wav_len/2
+            wav_len = int(wav.shape[1]/2048)*2048
+            end = 4*self.sample_rate if wav_len/2 > 4*self.sample_rate else int(wav_len/2)
             wav_infer = wav[:, :end]
-            wav_refer = wav[:, wav_len/2:wav_len]
+            wav_refer = wav[:, int(wav_len/2):wav_len]
 
             '''
             audio_data = wav_refer[0].numpy()
@@ -131,13 +130,13 @@ class BigVGANCollator:
         wav_refers = []
         # This is the sequential "background" tokens that are used as padding for text tokens, as specified in the DALLE paper.
         for sample in batch:
-            text_token, mel_refer, mel_infer, wav_infer, wav_infer_length, wav_refer = sample
+            text_token, mel_refer, mel_infer, wav_infer, wav_refer = sample
 
             texts.append(F.pad(text_token, (0, max_text_len-len(text_token)), value=0))
             mel_refers.append(F.pad(mel_refer, (0, max_mel_refer_lens-mel_refer.shape[1]), value=0))
-            mel_infers.append(F.pad(mel_refer, (0, max_mel_infer_lens-mel_infer.shape[1]), value=0))
+            mel_infers.append(F.pad(mel_infer, (0, max_mel_infer_lens-mel_infer.shape[1]), value=0))
             wav_infers.append(F.pad(wav_infer, (0, max_wav_infer_lens-wav_infer.shape[1]), value=0))
-            wav_refers.append(F.pad(wav_refers, (0, max_wav_refer_lens-wav_refer.shape[1]), value=0))
+            wav_refers.append(F.pad(wav_refer, (0, max_wav_refer_lens-wav_refer.shape[1]), value=0))
 
         padded_text = torch.stack(texts)
         padded_mel_refer = torch.stack(mel_refers)

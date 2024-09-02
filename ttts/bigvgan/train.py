@@ -26,6 +26,7 @@ from env import AttrDict, build_env
 from meldataset import mel_spectrogram, MAX_WAV_VALUE
 from dataset import BigVGANDataset, BigVGANCollator
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
+from ttts.utils.utils import get_logger
 
 from bigvgan import BigVGAN
 from msf.msf_disc import Discriminators as MSFDiscriminator
@@ -54,11 +55,13 @@ import torchaudio as ta
 from pesq import pesq
 from tqdm import tqdm
 import auraloss
+import logging
 
 from ttts.gpt.model import UnifiedVoice
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.utils.checkpoint import load_checkpoint as load_checkpoint_xtts
 
+logging.getLogger("numba").setLevel(logging.WARNING)
 
 torch.backends.cudnn.benchmark = False
 
@@ -133,6 +136,8 @@ def train(rank, a, h):
         print(f"Discriminator msfd params: {sum(p.numel() for p in msfd.parameters())}")
         os.makedirs(a.checkpoint_path, exist_ok=True)
         print(f"Checkpoints directory: {a.checkpoint_path}")
+        logger = get_logger(a.checkpoint_path)
+        logger.info(h)
 
     if os.path.isdir(a.checkpoint_path):
         # New in v2.1: If the step prefix pattern-based checkpoints are not found, also check for renamed files in Hugging Face Hub to resume training
@@ -187,25 +192,25 @@ def train(rank, a, h):
     )
 
     ## load vqvae model ##
-    cfg = OmegaConf.load(h.gpt_config)
+    gpt_cfg = OmegaConf.load(h.gpt_config)
 
-    dvae = DiscreteVAE(**cfg.vqvae)
-    dvae_path = cfg.dvae_checkpoint
+    dvae = DiscreteVAE(**gpt_cfg.vqvae)
+    dvae_path = gpt_cfg.dvae_checkpoint
     load_checkpoint_xtts(dvae, dvae_path)
     dvae = dvae.to(device)
     dvae.eval()
     print(">> vqvae weights restored from:", dvae_path)
 
     ## load gpt model ##
-    gpt = UnifiedVoice(**cfg.gpt)
-    gpt_path = cfg.gpt_checkpoint
+    gpt = UnifiedVoice(**gpt_cfg.gpt)
+    gpt_path = gpt_cfg.gpt_checkpoint
     load_checkpoint_xtts(gpt, gpt_path)
     gpt = gpt.to(device)
     gpt.eval()
     print(">> GPT weights restored from:", gpt_path)
     gpt.post_init_gpt2_config(use_deepspeed=False, kv_cache=False, half=False)
 
-    trainset = BigVGANDataset(h.sampling_rate, h.training_files)
+    trainset = BigVGANDataset(gpt_cfg, h.training_files, is_eval=False)
     train_sampler = DistributedSampler(trainset) if h.num_gpus > 1 else None
     train_loader = DataLoader(trainset,
                               batch_size=h.batch_size,
@@ -217,7 +222,7 @@ def train(rank, a, h):
                               collate_fn=BigVGANCollator())
 
     if rank == 0:
-        validset = BigVGANDataset(h.sampling_rate, h.validation_files)
+        validset = BigVGANDataset(gpt_cfg, h.validation_files, is_eval=True)
         validation_loader = DataLoader(validset,
                                        batch_size=1,
                                        shuffle=False,
@@ -335,6 +340,8 @@ def train(rank, a, h):
             sw.add_scalar(f"validation_{mode}/mel_spec_error", val_err, steps)
             sw.add_scalar(f"validation_{mode}/pesq", val_pesq, steps)
             sw.add_scalar(f"validation_{mode}/mrstft", val_mrstft, steps)
+            logger.info('Steps : {:d}, mel_spec_error : {:4.3f}, pesq : {:4.3f}, mrstft : {:4.3f}'.
+                                format(steps, val_err, val_pesq, val_mrstft))
 
         generator.train()
 
@@ -376,7 +383,7 @@ def train(rank, a, h):
             wav_refer = batch['padded_wav_refer']
             wav_refer_lens = batch['wav_refer_lens']
 
-            y_ = wav_infer
+            y_ = wav_infer.squeeze(1)
             if h.mel_type == "pytorch":
                 mel_ref = mel_refer
             else:
@@ -398,13 +405,16 @@ def train(rank, a, h):
 
                 x = []
                 y = []
+                #print(f"y_ shape {y_.shape}, wav_infer_lens {wav_infer_lens}")
                 for wav, feat, len_ in zip(y_, latent, wav_infer_lens):
                     # [T], [1024, T/1024], 1
                     start = 0
                     if len_ // 1024 - 1 > chunk:
                         start = random.randint(0, len_ // 1024 - 1 - chunk)
                     gpt_latent = feat[:, start:start + chunk]
+                    #print(f"wav shape {wav.shape}")
                     wav = wav[start * hop_length: (start + chunk) * hop_length]
+                    #print(f"gpt_latent shape {gpt_latent.shape}, wav shape {wav.shape}")
 
                     x.append(gpt_latent)
                     y.append(wav)
@@ -429,7 +439,7 @@ def train(rank, a, h):
             y = y.unsqueeze(1)
             y_g_hat, contrastive_loss = generator(x.transpose(1, 2), mel_ref.transpose(1, 2), mel_refer_len)
             if h.mel_type == "pytorch":
-                y_mel = mel_pytorch(y_g_hat.squeeze(1))
+                y_g_hat_mel = mel_pytorch(y_g_hat.squeeze(1))
             else:
                 y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size,
                                               h.win_size, h.fmin, h.fmax_for_loss)
@@ -517,14 +527,14 @@ def train(rank, a, h):
                     mel_error = (
                         loss_mel.item() / lambda_melloss
                     )  # Log training mel regression loss to stdout
-                    print(
-                        f"Steps: {steps:d}, "
-                        f"Gen Loss Total: {loss_gen_all:4.3f}, "
-                        f"Mel Error: {mel_error:4.3f}, "
-                        f"s/b: {time.time() - start_b:4.3f} "
-                        f"lr: {optim_g.param_groups[0]['lr']:4.7f} "
-                        f"grad_norm_g: {grad_norm_g:4.3f}"
-                    )
+                    logger.info(
+                            f"Steps: {steps:d}, "
+                            f"Gen Loss Total: {loss_gen_all:4.3f}, "
+                            f"Mel Error: {mel_error:4.3f}, "
+                            f"s/b: {time.time() - start_b:4.3f} "
+                            f"lr: {optim_g.param_groups[0]['lr']:4.7f} "
+                            f"grad_norm_g: {grad_norm_g:4.3f}"
+                        )
 
                 # Checkpointing
                 if steps % a.checkpoint_interval == 0 and steps != 0:

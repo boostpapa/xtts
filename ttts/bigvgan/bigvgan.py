@@ -241,9 +241,7 @@ class AMPBlock2(torch.nn.Module):
         for l in self.convs:
             remove_weight_norm(l)
 
-
-class BigVGAN(
-    torch.nn.Module,
+'''
     PyTorchModelHubMixin,
     library_name="bigvgan",
     repo_url="https://github.com/NVIDIA/BigVGAN",
@@ -251,6 +249,10 @@ class BigVGAN(
     pipeline_tag="audio-to-audio",
     license="mit",
     tags=["neural-vocoder", "audio-generation", "arxiv:2206.04658"],
+'''
+
+class BigVGAN(
+    torch.nn.Module,
 ):
     """
     BigVGAN is a neural vocoder model that applies anti-aliased periodic activation for residual blocks (resblocks).
@@ -288,7 +290,7 @@ class BigVGAN(
 
         # Pre-conv
         self.conv_pre = weight_norm(
-            Conv1d(h.num_mels, h.upsample_initial_channel, 7, 1, padding=3)
+            Conv1d(h.gpt_dim, h.upsample_initial_channel, 7, 1, padding=3)
         )
 
         # Define which AMPBlock to use. BigVGAN uses AMPBlock1 as default
