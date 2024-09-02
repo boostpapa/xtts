@@ -20,6 +20,7 @@ from alias_free_activation.torch.act import Activation1d as TorchActivation1d
 from env import AttrDict
 
 from huggingface_hub import PyTorchModelHubMixin, hf_hub_download
+from ttts.bigvgan.ECAPA_TDNN import ECAPA_TDNN
 
 
 def load_hparams_from_json(path) -> AttrDict:
@@ -358,14 +359,50 @@ class BigVGAN(
         # Final tanh activation. Defaults to True for backward compatibility
         self.use_tanh_at_final = h.get("use_tanh_at_final", True)
 
-    def forward(self, x):
+        self.speaker_encoder = ECAPA_TDNN(h.num_mels, lin_neurons=h.speaker_embedding_dim)
+        self.cond_layer = nn.Conv1d(h.speaker_embedding_dim, h.upsample_initial_channel, 1)
+        if self.cond_in_each_up_layer:
+            self.conds = nn.ModuleList()
+            for i in range(len(self.ups)):
+                ch = h.upsample_initial_channel // (2 ** (i + 1))
+                self.conds.append(nn.Conv1d(h.speaker_embedding_dim, ch, 1))
+
+    def forward(self, x, mel_refer, lens=None):
+        # Speaker reference
+        speaker_embedding = self.speaker_encoder(mel_refer, lens)
+        n_batch = x.size(0)
+        contrastive_loss = None
+        if n_batch * 2 == speaker_embedding.size(0):
+            spe_emb_chunk1, spe_emb_chunk2 = speaker_embedding[:n_batch, :, :], speaker_embedding[n_batch:, :, :]
+            contrastive_loss = self.cal_clip_loss(spe_emb_chunk1.squeeze(1), spe_emb_chunk2.squeeze(1),
+                                                  self.logit_scale.exp())
+
+            speaker_embedding = speaker_embedding[:n_batch, :, :]
+        speaker_embedding = speaker_embedding.transpose(1, 2)
+
+        # upsample feat
+        if self.feat_upsample:
+            x = torch.nn.functional.interpolate(
+                x.transpose(1, 2),
+                scale_factor=[4],
+                mode="linear",
+            ).squeeze(1)
+        else:
+            x = x.transpose(1, 2)
+
+        # BigVGAN
         # Pre-conv
         x = self.conv_pre(x)
+        x = x + self.cond_layer(speaker_embedding)
 
         for i in range(self.num_upsamples):
             # Upsampling
             for i_up in range(len(self.ups[i])):
                 x = self.ups[i][i_up](x)
+
+            if self.cond_in_each_up_layer:
+                x = x + self.conds[i](speaker_embedding)
+
             # AMP blocks
             xs = None
             for j in range(self.num_kernels):
@@ -384,7 +421,7 @@ class BigVGAN(
         else:
             x = torch.clamp(x, min=-1.0, max=1.0)  # Bound the output to [-1, 1]
 
-        return x
+        return x, contrastive_loss
 
     def remove_weight_norm(self):
         try:
