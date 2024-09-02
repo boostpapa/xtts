@@ -187,7 +187,7 @@ def train(rank, a, h):
     )
 
     ## load vqvae model ##
-    cfg = OmegaConf.load('gpt.yaml')
+    cfg = OmegaConf.load(h.gpt_config)
 
     dvae = DiscreteVAE(**cfg.vqvae)
     dvae_path = cfg.dvae_checkpoint
@@ -342,8 +342,8 @@ def train(rank, a, h):
     if a.evaluate:
         exit()
 
-    segment_size = 8192  # 11264 # 8192 # 24576
-    hop_length = 1024
+    segment_size = h.segment_size  # 11264 # 8192 # 24576
+    hop_length = h.gpt_dim
     chunk = segment_size // hop_length
 
     # Main training loop
