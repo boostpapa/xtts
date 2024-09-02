@@ -130,6 +130,7 @@ def train(rank, a, h):
         print(generator)
         print(mpd)
         print(mrd)
+        print(msfd)
         print(f"Generator params: {sum(p.numel() for p in generator.parameters())}")
         print(f"Discriminator mpd params: {sum(p.numel() for p in mpd.parameters())}")
         print(f"Discriminator mrd params: {sum(p.numel() for p in mrd.parameters())}")
@@ -170,12 +171,13 @@ def train(rank, a, h):
         generator = DistributedDataParallel(generator, device_ids=[rank]).to(device)
         mpd = DistributedDataParallel(mpd, device_ids=[rank]).to(device)
         mrd = DistributedDataParallel(mrd, device_ids=[rank]).to(device)
+        msfd = DistributedDataParallel(msfd, device_ids=[rank]).to(device)
 
     optim_g = torch.optim.AdamW(
         generator.parameters(), h.learning_rate, betas=[h.adam_b1, h.adam_b2]
     )
     optim_d = torch.optim.AdamW(
-        itertools.chain(mrd.parameters(), mpd.parameters()),
+        itertools.chain(mrd.parameters(), mpd.parameters(), msfd.parameters()),
         h.learning_rate,
         betas=[h.adam_b1, h.adam_b2],
     )
@@ -357,6 +359,7 @@ def train(rank, a, h):
     generator.train()
     mpd.train()
     mrd.train()
+    msfd.train()
     for epoch in range(max(0, last_epoch), a.training_epochs):
         if rank == 0:
             start = time.time()
@@ -528,6 +531,7 @@ def train(rank, a, h):
                         loss_mel.item() / lambda_melloss
                     )  # Log training mel regression loss to stdout
                     logger.info(
+                            f"Epoch: {epoch+1:d}, "
                             f"Steps: {steps:d}, "
                             f"Gen Loss Total: {loss_gen_all:4.3f}, "
                             f"Mel Error: {mel_error:4.3f}, "
