@@ -4,6 +4,7 @@ import math
 
 from msf.conv2d_gradfix import conv2d as nvlabs_conv2d, no_weight_gradients
 
+
 class Discriminators(torch.nn.Module):
     def __init__(
         self,
@@ -11,7 +12,7 @@ class Discriminators(torch.nn.Module):
         channels,
         kernel_size,
         frequency_ranges,
-        ) -> None:
+    ) -> None:
         super(Discriminators, self).__init__()
 
         self.frequency_ranges = frequency_ranges
@@ -20,25 +21,26 @@ class Discriminators(torch.nn.Module):
 
         for index, frequency_Range in enumerate(frequency_ranges):
             self.layer_Dict['Discriminator_{}'.format(index)] = Discriminator(
-                stacks= stacks,
-                channels= channels,
-                kernel_size= kernel_size,
-                frequency_range= frequency_Range
+                stacks=stacks,
+                channels=channels,
+                kernel_size=kernel_size,
+                frequency_range=frequency_Range
                 )
 
     def forward(
         self,
         x: torch.FloatTensor,
         lengths: torch.LongTensor
-        ):
+    ):
         '''
         x: [Batch, Mel_dim, Time]
         '''
-        x = x.transpose(1,2)
+        x = x.transpose(1, 2)
         return [
             self.layer_Dict['Discriminator_{}'.format(index)](x, lengths)
             for index in range(len(self.frequency_ranges))
             ]
+
 
 class Discriminator(torch.nn.Module):
     def __init__(
@@ -47,7 +49,7 @@ class Discriminator(torch.nn.Module):
         kernel_size: int,
         channels: int,
         frequency_range: List[int]
-        ) -> None:
+    ) -> None:
         super(Discriminator, self).__init__()
 
         self.frequency_Range = frequency_range
@@ -57,31 +59,31 @@ class Discriminator(torch.nn.Module):
         previous_Channels = 1
         for index in range(stacks - 1):
             self.layer.add_module('Conv_{}'.format(index), Conv2d(
-                in_channels= previous_Channels,
-                out_channels= channels,
-                kernel_size= kernel_size,
-                bias= False,
-                w_init_gain= 'linear'
+                in_channels=previous_Channels,
+                out_channels=channels,
+                kernel_size=kernel_size,
+                bias=False,
+                w_init_gain='linear'
                 ))
             self.layer.add_module('Leaky_ReLU_{}'.format(index), torch.nn.LeakyReLU(
-                negative_slope= 0.2,
-                inplace= True
+                negative_slope=0.2,
+                inplace=True
                 ))
             previous_Channels = channels
 
         self.layer.add_module('Projection', Conv2d(
-            in_channels= previous_Channels,
-            out_channels= 1,
-            kernel_size= 1,
-            bias= True,
-            w_init_gain= 'linear'
+            in_channels=previous_Channels,
+            out_channels=1,
+            kernel_size=1,
+            bias=True,
+            w_init_gain='linear'
             ))
 
     def forward(
         self,
         x: torch.FloatTensor,
         lengths: torch.LongTensor
-        ):
+    ):
         '''
         x: [Batch, Mel_dim, Time]
         '''
@@ -89,9 +91,9 @@ class Discriminator(torch.nn.Module):
         mels = []
         for mel, length in zip(x, lengths):
             offset = torch.randint(
-                low= 0,
-                high= length - sampling_Length + 1,
-                size= (1,)
+                low=0,
+                high=length - sampling_Length + 1,
+                size=(1,)
                 ).to(x.device)
             mels.append(mel[self.frequency_Range[0]:self.frequency_Range[1], offset:offset + sampling_Length])
 
@@ -101,7 +103,7 @@ class Discriminator(torch.nn.Module):
 
 
 class Conv2d(torch.nn.Conv2d):
-    def __init__(self, w_init_gain= 'relu', clamp: float=None, *args, **kwargs):
+    def __init__(self, w_init_gain='relu', clamp: float=None, *args, **kwargs):
         self.w_init_gain = w_init_gain
         self.clamp = clamp
 
@@ -115,10 +117,10 @@ class Conv2d(torch.nn.Conv2d):
 
     def forward(self, x: torch.Tensor):
         x = nvlabs_conv2d(
-            input= x,
-            weight= self.weight.to(x.device) * self.runtime_Coef,
-            stride= self.stride,
-            padding= (int((self.kernel_size[0] - self.stride[0]) / 2), int((self.kernel_size[1] - self.stride[0]) / 2))
+            input=x,
+            weight=self.weight.to(x.device) * self.runtime_Coef,
+            stride=self.stride,
+            padding=(int((self.kernel_size[0] - self.stride[0]) / 2), int((self.kernel_size[1] - self.stride[0]) / 2))
             )   # [Batch, Out, Resolution, Resolution]
 
         if not self.bias is None:

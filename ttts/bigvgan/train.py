@@ -426,7 +426,7 @@ def train(rank, a, h):
                     y_mel = mel_pytorch(y)
                 else:
                     y_mel = mel_spectrogram(y, h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin,
-                                        h.fmax_for_loss)
+                                            h.fmax_for_loss)
                 feats_lengths = torch.LongTensor([segment_size // 256 + 1] * y_mel.size(0))
 
             '''
@@ -508,7 +508,7 @@ def train(rank, a, h):
             loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
 
             # msfd loss
-            d_res = msfd(y_g_hat_mel.transpose(1,2), feats_lengths)
+            d_res = msfd(y_g_hat_mel.transpose(1, 2), feats_lengths)
             loss_adv_msfd = torch.stack([torch.mean((1-w)**2) for w in d_res]).sum()
 
             if steps >= a.freeze_step:
