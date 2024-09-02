@@ -283,6 +283,9 @@ class BigVGAN(
         self.num_kernels = len(h.resblock_kernel_sizes)
         self.num_upsamples = len(h.upsample_rates)
 
+        self.feat_upsample = h.feat_upsample
+        self.cond_in_each_up_layer = h.cond_d_vector_in_each_upsampling_layer
+
         # Pre-conv
         self.conv_pre = weight_norm(
             Conv1d(h.num_mels, h.upsample_initial_channel, 7, 1, padding=3)
