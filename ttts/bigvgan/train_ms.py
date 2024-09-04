@@ -74,7 +74,7 @@ class Trainer(object):
         self.log_interval = self.cfg.train['log_interval']
         self.num_epochs = self.cfg.train['epochs']
         self.accum_grad = self.cfg.train['accum_grad']
-        self.freeze_step = self.cfg.train['freeze_step']
+        self.freeze_step = self.cfg.train['freeze_step'] if 'freeze_step' in self.cfg.train else 0
         self.lr = self.cfg.train['lr']
         self.precision = self.cfg.train['precision']
         # ['no', 'fp8', 'fp16', 'bf16']
@@ -183,11 +183,11 @@ class Trainer(object):
         print(">> vqvae weights restored from:", dvae_path)
 
         self.optim_g = torch.optim.AdamW(
-            self.generator.parameters(), h.learning_rate, betas=[h.adam_b1, h.adam_b2]
+            self.generator.parameters(), self.lr, betas=[h.adam_b1, h.adam_b2]
         )
         self.optim_d = torch.optim.AdamW(
             itertools.chain(self.mrd.parameters(), self.mpd.parameters(), self.msfd.parameters()),
-            h.learning_rate,
+            self.lr,
             betas=[h.adam_b1, h.adam_b2],
         )
 
@@ -216,11 +216,11 @@ class Trainer(object):
         self.generator, self.mpd, self.mrd, self.msfd, \
             self.train_dataloader, self.eval_dataloader, \
             self.optim_g, self.optim_d, self.scheduler_g, self.scheduler_d, \
-            self.gpt, self.dvae \
+            self.gpt, self.dvae, self.mel_pytorch \
             = self.accelerator.prepare(self.generator, self.mpd, self.mrd, self.msfd,
                                        self.train_dataloader, self.eval_dataloader,
                                        self.optim_g, self.optim_d, self.scheduler_g, self.scheduler_d,
-                                       self.gpt, self.dvae)
+                                       self.gpt, self.dvae, self.mel_pytorch)
         self.grad_clip = self.cfg.train['grad_clip']
         if self.grad_clip <= 0:
             self.grad_clip = 1000
@@ -428,7 +428,7 @@ class Trainer(object):
                                 "epoch": epoch,
                             },
                         )
-                        self.global_step += 1
+                    self.global_step += 1
 
         accelerator.print('training complete')
         accelerator.end_training()
