@@ -429,6 +429,8 @@ class Trainer(object):
                             },
                         )
                     self.global_step += 1
+                    self.scheduler_g.step()
+                    self.scheduler_d.step()
 
         accelerator.print('training complete')
         accelerator.end_training()
