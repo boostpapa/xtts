@@ -407,7 +407,8 @@ class Trainer(object):
                             f"grad_norm_g: {grad_norm_g:4.3f}"
                         )
                     # Checkpointing
-                    if self.global_step % self.save_interval == 0 and self.global_step != 0:
+                    #if self.global_step % self.save_interval == 0 and self.global_step != 0:
+                    if self.global_step % self.save_interval == 0:
                         checkpoint_path = f"{self.model_dir}/g_{self.global_step:08d}"
                         save_checkpoint(
                             checkpoint_path,
