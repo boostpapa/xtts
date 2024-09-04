@@ -429,9 +429,10 @@ class Trainer(object):
                                 "epoch": epoch,
                             },
                         )
-                    self.global_step += 1
-                    self.scheduler_g.step()
-                    self.scheduler_d.step()
+                # end main_process
+                self.global_step += 1
+                self.scheduler_g.step()
+                self.scheduler_d.step()
 
         accelerator.print('training complete')
         accelerator.end_training()
