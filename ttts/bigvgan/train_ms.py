@@ -316,9 +316,9 @@ class Trainer(object):
 
                     y_mel = self.mel_pytorch(y)
                     feats_lengths = torch.LongTensor([segment_size // 256 + 1] * y_mel.size(0))
+                    y = y.unsqueeze(1)
 
                 # Discriminators
-                y = y.unsqueeze(1)
                 self.optim_d.zero_grad()
 
                 with accelerator.autocast():
@@ -347,7 +347,8 @@ class Trainer(object):
 
                 # Whether to freeze D for initial training steps
                 if self.global_step >= self.freeze_step:
-                    loss_disc_all.backward()
+                    #loss_disc_all.backward()
+                    accelerator.backward(loss_disc_all)
                     if accelerator.sync_gradients:
                         grad_norm_mpd = accelerator.clip_grad_norm_(self.mpd.parameters(), self.grad_clip)
                         grad_norm_mrd = accelerator.clip_grad_norm_(self.mrd.parameters(), self.grad_clip)
@@ -389,8 +390,11 @@ class Trainer(object):
                         print(f"[WARNING] using regression loss only for G for the first {self.freeze_step} steps")
                         loss_gen_all = loss_mel
 
-                loss_gen_all.backward()
-                grad_norm_g = accelerator.clip_grad_norm_(self.generator.parameters(), self.grad_clip)
+                #loss_gen_all.backward()
+                accelerator.backward(loss_gen_all)
+                if accelerator.sync_gradients:
+                    grad_norm_g = accelerator.clip_grad_norm_(self.generator.parameters(), self.grad_clip)
+                accelerator.wait_for_everyone()
                 self.optim_g.step()
 
                 if accelerator.is_main_process:
@@ -407,8 +411,8 @@ class Trainer(object):
                             f"grad_norm_g: {grad_norm_g:4.3f}"
                         )
                     # Checkpointing
-                    #if self.global_step % self.save_interval == 0 and self.global_step != 0:
-                    if self.global_step % self.save_interval == 0:
+                    #if self.global_step % self.save_interval == 0:
+                    if self.global_step % self.save_interval == 0 and self.global_step != 0:
                         checkpoint_path = f"{self.model_dir}/g_{self.global_step:08d}"
                         save_checkpoint(
                             checkpoint_path,
