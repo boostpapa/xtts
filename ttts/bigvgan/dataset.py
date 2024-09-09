@@ -93,6 +93,10 @@ class BigVGANDataset(torch.utils.data.Dataset):
             print(f"Warning: {wav_path} processing error, skip!")
             return None
 
+        if text_tokens.shape[0] > 300 or mel_refer.shape[1] > 1200:
+            print(f"Warning: {wav_path} text len {text_tokens.shape[0]} exceed 300 or raw mel len {mel_refer.shape[1]*2} exceed 2400.")
+            return None
+
         return text_tokens, mel_refer, mel_infer, wav_infer, wav_refer
 
     def __len__(self):
