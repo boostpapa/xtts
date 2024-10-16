@@ -44,7 +44,7 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         self.final_norm = norm
         self.lm_head = nn.Sequential(norm, linear)
         self.kv_cache = kv_cache
-        
+
         # Model parallel
         self.model_parallel = False
         self.device_map = None
@@ -69,13 +69,13 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         torch.cuda.empty_cache()
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
-    
+
     def get_output_embeddings(self):
         return self.lm_head
 
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
-    
+
     def store_mel_emb(self, mel_emb):
         self.cached_mel_emb = mel_emb
 
@@ -344,9 +344,9 @@ class UnifiedVoice(nn.Module):
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
         elif condition_type == "conformer_perceiver" or condition_type == "conformer_encoder":
             self.conditioning_encoder = ConformerEncoder(input_size=100,
-                                                         output_size=condition_module['output_size'], 
+                                                         output_size=condition_module['output_size'],
                                                          linear_units=condition_module['linear_units'],
-                                                         attention_heads=condition_module['attention_heads'], 
+                                                         attention_heads=condition_module['attention_heads'],
                                                          num_blocks=condition_module['num_blocks'],
                                                          input_layer=condition_module['input_layer'])
             if condition_type == "conformer_perceiver":
@@ -606,7 +606,7 @@ class UnifiedVoice(nn.Module):
         return loss_text.mean(), loss_mel.mean(), mel_logits
 
     def inference_speech(self, speech_conditioning_latent, text_inputs, cond_mel_lengths=None, input_tokens=None, num_return_sequences=1,
-                         max_generate_length=None, typical_sampling=False, typical_mass=.9, **hf_generate_kwargs):        
+                         max_generate_length=None, typical_sampling=False, typical_mass=.9, **hf_generate_kwargs):
 
         text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
         text_inputs, _ = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
