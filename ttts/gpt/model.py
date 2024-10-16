@@ -3,6 +3,7 @@ import functools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence, unpad_sequence
 from transformers import GPT2Config, GPT2PreTrainedModel, LogitsProcessorList
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.utils.model_parallel_utils import get_device_map, assert_device_map
@@ -11,6 +12,8 @@ from ttts.gpt.GST import GST
 from ttts.gpt.conformer_encoder import ConformerEncoder
 from ttts.utils.utils import AttentionBlock
 from ttts.utils.typical_sampling import TypicalLogitsWarper
+
+IGNORE_ID = -1
 
 
 def null_position_embeddings(range, dim):
@@ -44,7 +47,7 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         self.final_norm = norm
         self.lm_head = nn.Sequential(norm, linear)
         self.kv_cache = kv_cache
-        
+
         # Model parallel
         self.model_parallel = False
         self.device_map = None
@@ -69,13 +72,13 @@ class GPT2InferenceModel(GPT2PreTrainedModel):
         torch.cuda.empty_cache()
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
-    
+
     def get_output_embeddings(self):
         return self.lm_head
 
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
-    
+
     def store_mel_emb(self, mel_emb):
         self.cached_mel_emb = mel_emb
 
@@ -344,9 +347,9 @@ class UnifiedVoice(nn.Module):
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
         elif condition_type == "conformer_perceiver" or condition_type == "conformer_encoder":
             self.conditioning_encoder = ConformerEncoder(input_size=100,
-                                                         output_size=condition_module['output_size'], 
+                                                         output_size=condition_module['output_size'],
                                                          linear_units=condition_module['linear_units'],
-                                                         attention_heads=condition_module['attention_heads'], 
+                                                         attention_heads=condition_module['attention_heads'],
                                                          num_blocks=condition_module['num_blocks'],
                                                          input_layer=condition_module['input_layer'])
             if condition_type == "conformer_perceiver":
@@ -461,7 +464,7 @@ class UnifiedVoice(nn.Module):
                 text_input_tokens[b, actual_end:] = self.stop_text_token
         return text_input_tokens
 
-    def get_logits(self, speech_conditioning_inputs, first_inputs, first_head, second_inputs=None, second_head=None, get_attns=False, return_latent=False):
+    def get_logits_deprecated(self, speech_conditioning_inputs, first_inputs, first_head, second_inputs=None, second_head=None, get_attns=False, return_latent=False):
         if second_inputs is not None:
             emb = torch.cat([speech_conditioning_inputs, first_inputs, second_inputs], dim=1)
         else:
@@ -484,6 +487,26 @@ class UnifiedVoice(nn.Module):
         if second_inputs is not None:
             second_logits = enc[:, -second_inputs.shape[1]:]
             second_logits = second_head(second_logits)
+            second_logits = second_logits.permute(0, 2, 1)
+            return first_logits, second_logits
+        else:
+            return first_logits
+
+    def get_logits(self, emb, offset, first_head, second_head=None, get_attns=False, return_latent=False):
+        gpt_out = self.gpt(inputs_embeds=emb, return_dict=True, output_attentions=get_attns)
+        if get_attns:
+            return gpt_out.attentions
+
+        enc = gpt_out.last_hidden_state[:, offset:]
+        enc = self.final_norm(enc)
+
+        if return_latent:
+            return None, enc
+
+        first_logits = first_head(enc)
+        first_logits = first_logits.permute(0, 2, 1)
+        if second_head is not None:
+            second_logits = second_head(enc)
             second_logits = second_logits.permute(0, 2, 1)
             return first_logits, second_logits
         else:
@@ -526,7 +549,16 @@ class UnifiedVoice(nn.Module):
             conds = conds.unsqueeze(1)
         return conds
 
-    def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths,
+    def pad_unpad_sequence(self, conds, text_token, text_token_len, speech_token, speech_token_len):
+        text_tokens = unpad_sequence(text_token, text_token_len, batch_first=True)
+        speech_tokens = unpad_sequence(speech_token, speech_token_len, batch_first=True)
+        lm_input = [torch.concat([conds[i], text_tokens[i], speech_tokens[i]], dim=0)
+                    for i in range(len(text_tokens))]
+        lm_input_len = torch.tensor([i.size(0) for i in lm_input], dtype=torch.int32)
+        lm_input = pad_sequence(lm_input, batch_first=True, padding_value=IGNORE_ID)
+        return lm_input, lm_input_len
+
+    def forward_deprecated(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths,
                 cond_mel_lengths=None, types=None, text_first=True, raw_mels=None, return_attentions=False,
                 return_latent=False, clip_inputs=False):
         """
@@ -605,8 +637,102 @@ class UnifiedVoice(nn.Module):
         #loss_mel = F.cross_entropy(mel_logits, mel_targets.long())
         return loss_text.mean(), loss_mel.mean(), mel_logits
 
+    def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths,
+                cond_mel_lengths=None, types=None, text_first=True, raw_mels=None, return_attentions=False,
+                return_latent=False, clip_inputs=False):
+        """
+        Forward pass that uses both text and voice in either text conditioning mode or voice conditioning mode
+        (actuated by `text_first`).
+
+        speech_conditioning_input: MEL float tensor, (b,1024)
+        text_inputs: long tensor, (b,t)
+        text_lengths: long tensor, (b,)
+        mel_inputs:  long tensor, (b,m)
+        wav_lengths: long tensor, (b,)
+        raw_mels: MEL float tensor (b,80,s)
+
+        If return_attentions is specified, only logits are returned.
+        If return_latent is specified, loss & logits are not computed or returned. Only the predicted latents are returned.
+        If clip_inputs is True, the inputs will be clipped to the smallest input size across each input modality.
+        """
+
+        speech_conditioning_latent = self.get_conditioning(speech_conditioning_latent, cond_mel_lengths)
+        # Types are expressed by expanding the text embedding space.
+        if types is not None:
+            text_inputs = text_inputs * (1+types).unsqueeze(-1)
+
+        if clip_inputs:
+            # This model will receive micro-batches with a ton of padding for both the text and MELs. Ameliorate this by
+            # chopping the inputs by the maximum actual length.
+            max_text_len = text_lengths.max()
+            text_inputs = text_inputs[:, :max_text_len]
+            max_mel_len = wav_lengths.max() // self.mel_length_compression
+            mel_codes = mel_codes[:, :max_mel_len]
+            if raw_mels is not None:
+                raw_mels = raw_mels[:, :, :max_mel_len*4]
+
+        # Set padding areas within MEL (currently it is coded with the MEL code for <zero>).
+        #mel_codes_lengths = torch.div(wav_lengths, self.mel_length_compression, rounding_mode='trunc')
+        mel_codes_lengths = torch.ceil(wav_lengths / self.mel_length_compression).long() + 1
+        mel_codes = self.set_mel_padding(mel_codes, mel_codes_lengths)
+
+        text_inputs = self.set_text_padding(text_inputs, text_lengths)
+        text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
+        mel_codes = F.pad(mel_codes, (0, 1), value=self.stop_mel_token)
+
+        conds = speech_conditioning_latent
+        text_inputs, text_targets = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
+        text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
+        mel_codes, mel_targets = self.build_aligned_inputs_and_targets(mel_codes, self.start_mel_token, self.stop_mel_token)
+        if raw_mels is not None:
+            mel_inp = F.pad(raw_mels, (0, 8))
+        else:
+            mel_inp = mel_codes
+        mel_emb = self.mel_embedding(mel_inp)
+        mel_emb = mel_emb + self.mel_pos_embedding(mel_codes)
+
+        # prepare llm_input
+        lm_input, lm_input_len = self.pad_unpad_sequence(conds, text_emb, text_lengths+2, mel_emb, mel_codes_lengths+1)
+
+        # prepare llm_target
+        lm_target_mel = [torch.tensor([IGNORE_ID] * (text_lengths[i]+2) + mel_targets[i, : mel_codes_lengths[i]+1].tolist())
+                         for i in range(text_lengths.size(0))]
+        lm_target_mel = pad_sequence(lm_target_mel, batch_first=True, padding_value=IGNORE_ID)
+
+        lm_target_text = [torch.tensor(text_targets[i, :text_lengths[i]+2].tolist() + [IGNORE_ID] * (mel_codes_lengths[i]+1))
+                         for i in range(text_lengths.size(0))]
+        lm_target_text = pad_sequence(lm_target_text, batch_first=True, padding_value=IGNORE_ID)
+
+
+        if text_first:
+            #print(f"conds: {conds.shape}, text_emb: {text_emb.shape}, mel_emb: {mel_emb.shape}")
+            text_logits, mel_logits = self.get_logits(lm_input, conds.shape[1], self.text_head, self.mel_head, get_attns=return_attentions, return_latent=return_latent)
+            if return_latent:
+                return mel_logits[:, :-2], text_lengths+2, mel_codes_lengths-1  # Despite the name, these are not logits. Strip off the two tokens added by this forward pass.
+
+        if return_attentions:
+            return mel_logits
+
+        text_logits = torch.masked_select(text_logits.transpose(1, 2),
+                                          (lm_target_text.unsqueeze(-1) != -1)).reshape(-1, text_logits.shape[1])
+        lm_target_text = torch.masked_select(lm_target_text, lm_target_text != -1)
+
+        mel_logits = torch.masked_select(mel_logits.transpose(1, 2),
+                                         (lm_target_mel.unsqueeze(-1) != -1)).reshape(-1, mel_logits.shape[1])
+        lm_target_mel = torch.masked_select(lm_target_mel, lm_target_mel != -1)
+
+        text_logits = text_logits.transpose(0, 1).unsqueeze(0)
+        mel_logits = mel_logits.transpose(0, 1).unsqueeze(0)
+        lm_target_text = lm_target_text.unsqueeze(0)
+        lm_target_mel = lm_target_mel.unsqueeze(0)
+
+
+        loss_text = F.cross_entropy(text_logits, lm_target_text.long())
+        loss_mel = F.cross_entropy(mel_logits, lm_target_mel.long())
+        return loss_text.mean(), loss_mel.mean(), mel_logits
+
     def inference_speech(self, speech_conditioning_latent, text_inputs, cond_mel_lengths=None, input_tokens=None, num_return_sequences=1,
-                         max_generate_length=None, typical_sampling=False, typical_mass=.9, **hf_generate_kwargs):        
+                         max_generate_length=None, typical_sampling=False, typical_mass=.9, **hf_generate_kwargs):
 
         text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
         text_inputs, _ = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
