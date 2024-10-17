@@ -186,7 +186,7 @@ if __name__ == '__main__':
     from torch.utils.data import DataLoader
     #json_cfg = json.load(open('configs/config.json'))
     #cfg = AttrDict(json_cfg)
-    cfg = OmegaConf.load(open('configs/config_test.yaml'))
+    cfg = OmegaConf.load(open('configs/config.yaml'))
     train_dataset = GptTTSDataset(cfg, cfg.dataset['training_files'], is_eval=False)
     train_dataloader = DataLoader(train_dataset, **cfg.dataloader, collate_fn=GptTTSCollater(cfg))
     i = 0
@@ -194,5 +194,6 @@ if __name__ == '__main__':
     max_text = 0
     max_mel = 0
     #for batch in tqdm(train_dataloader):
-    for batch in train_dataloader:
-        print(batch['padded_raw_mel'].shape, batch['raw_mel_lengths'])
+    for batch in tqdm(train_dataloader):
+        pass
+        #print(batch['padded_raw_mel'].shape, batch['raw_mel_lengths'])

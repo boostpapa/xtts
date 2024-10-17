@@ -695,11 +695,11 @@ class UnifiedVoice(nn.Module):
         lm_input, lm_input_len = self.pad_unpad_sequence(conds, text_emb, text_lengths+2, mel_emb, mel_codes_lengths+1)
 
         # prepare llm_target
-        lm_target_mel = [torch.tensor([IGNORE_ID] * (text_lengths[i]+2) + mel_targets[i, : mel_codes_lengths[i]+1].tolist())
+        lm_target_mel = [torch.tensor([IGNORE_ID] * (text_lengths[i]+2) + mel_targets[i, : mel_codes_lengths[i]+1].tolist(), device=conds.device)
                          for i in range(text_lengths.size(0))]
         lm_target_mel = pad_sequence(lm_target_mel, batch_first=True, padding_value=IGNORE_ID)
 
-        lm_target_text = [torch.tensor(text_targets[i, :text_lengths[i]+2].tolist() + [IGNORE_ID] * (mel_codes_lengths[i]+1))
+        lm_target_text = [torch.tensor(text_targets[i, :text_lengths[i]+2].tolist() + [IGNORE_ID] * (mel_codes_lengths[i]+1), device=conds.device)
                          for i in range(text_lengths.size(0))]
         lm_target_text = pad_sequence(lm_target_text, batch_first=True, padding_value=IGNORE_ID)
 
