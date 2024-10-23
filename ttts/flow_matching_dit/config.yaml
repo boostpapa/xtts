@@ -1,0 +1,60 @@
+train:
+  train_steps: 100000
+  epochs: 50
+  log_interval: 10
+  save_interval: 10000
+  eval_interval: 5000
+  keep_ckpts: 15
+  accum_grad: 1
+  grad_clip: 1.0
+  precision: "fp32"
+  warmup_steps: 1000
+  lr: 1e-4
+  min_lr: 5e-5
+
+dataset:
+  training_files: /workspace/flow_matching/data/train.new.list
+  validation_files: /workspace/flow_matching/data/val.new.list
+  sample_rate: 24000
+  squeeze: false
+  mel:
+    sample_rate: 24000
+    n_fft: 1024
+    hop_length: 256
+    win_length: 1024
+    n_mels: 100
+    mel_fmin: 0
+    normalize: false
+
+vqvae:
+    channels: 100
+    num_tokens: 8192
+    hidden_dim: 512
+    num_resnet_blocks: 3
+    codebook_dim: 512
+    num_layers: 2
+    positional_dims: 1
+    kernel_size: 3
+    smooth_l1_loss: true
+    use_transposed_convs: false
+
+dvae_checkpoint: vqvae.pth
+
+dataloader:
+  batch_size : 128
+  shuffle: true
+  num_workers : 4
+  drop_last: false
+  pin_memory: true
+
+use_mrte: true
+flow_matching_dit:
+  mel_channels: 100
+  hidden_channels: 512
+  filter_channels: 1024
+  n_heads: 4
+  n_dec_layers: 6 
+  kernel_size: 3
+  p_dropout: 0.1
+  gin_channels: 256
+  cfg_dropout: 0.2
