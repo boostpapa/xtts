@@ -143,22 +143,28 @@ class Trainer(object):
                                                      mel_fmin=h.fmin, )
             print(f"Warning use torchaudio.transforms.MelSpectrogram extract mel.")
 
-        if os.path.isdir(self.model_dir):
+        if 'g_pretrain_model' in self.cfg.train:
+            cp_g = self.cfg.train['g_pretrain_model']
+            cp_do = self.cfg.train['do_pretrain_model']
+            print(">>bigvgan generator weights initialize with pretrain model:", cp_g)
+            print(">>bigvgan discriminator weights initialize with pretrain model:", cp_do)
+        elif os.path.isdir(self.model_dir):
             # New in v2.1: If the step prefix pattern-based checkpoints are not found, also check for renamed files in Hugging Face Hub to resume training
             cp_g = scan_checkpoint(self.model_dir, prefix="g_", renamed_file="bigvgan_generator.pt")
             cp_do = scan_checkpoint(self.model_dir, prefix="do_", renamed_file="bigvgan_discriminator_optimizer.pt",)
 
-            # Load the latest checkpoint if exists
-            self.steps = 0
-            if cp_g is None or cp_do is None:
-                state_dict_do = None
-            else:
-                state_dict_g = load_checkpoint(cp_g, "cpu")
-                state_dict_do = load_checkpoint(cp_do, "cpu")
-                self.generator.load_state_dict(state_dict_g["generator"])
-                self.mpd.load_state_dict(state_dict_do["mpd"])
-                self.mrd.load_state_dict(state_dict_do["mrd"])
-                self.msfd.load_state_dict(state_dict_do['msfd'])
+        # Load the latest checkpoint if exists
+        self.steps = 0
+        if cp_g is None or cp_do is None:
+            state_dict_do = None
+        else:
+            state_dict_g = load_checkpoint(cp_g, "cpu")
+            state_dict_do = load_checkpoint(cp_do, "cpu")
+            self.generator.load_state_dict(state_dict_g["generator"])
+            self.mpd.load_state_dict(state_dict_do["mpd"])
+            self.mrd.load_state_dict(state_dict_do["mrd"])
+            self.msfd.load_state_dict(state_dict_do['msfd'])
+            if 'g_pretrain_model' not in self.cfg.train:
                 self.global_step = state_dict_do["steps"] + 1
                 self.start_epoch = state_dict_do["epoch"]
 
@@ -191,7 +197,7 @@ class Trainer(object):
             betas=[h.adam_b1, h.adam_b2],
         )
 
-        if state_dict_do is not None:
+        if state_dict_do is not None and 'g_pretrain_model' not in self.cfg.train:
             self.optim_g.load_state_dict(state_dict_do["optim_g"])
             self.optim_d.load_state_dict(state_dict_do["optim_d"])
 
@@ -284,7 +290,8 @@ class Trainer(object):
 
                 with torch.no_grad():
                     mel_code = self.dvae.get_codebook_indices(mel_infer)
-                    latent = self.gpt(mel_refer,
+                    #latent = self.gpt(mel_refer,
+                    latent, text_lens_out, code_lens_out = self.gpt(mel_refer,
                                      text,
                                      text_lens,
                                      mel_code,
@@ -294,11 +301,15 @@ class Trainer(object):
                                      clip_inputs=False,)
                     # latent = latent / std
                     latent = latent.transpose(1, 2)
+                    latent_list = []
+                    for tmp, t_len in zip(latent, text_lens_out):
+                        tmp = tmp[:, t_len:]
+                        latent_list.append(tmp)
 
                     x = []
                     y = []
                     # print(f"y_ shape {y_.shape}, wav_infer_lens {wav_infer_lens}")
-                    for wav, feat, len_ in zip(y_, latent, wav_infer_lens):
+                    for wav, feat, len_ in zip(y_, latent_list, wav_infer_lens):
                         # [T], [1024, T/1024], 1
                         start = 0
                         if len_ // 1024 - 1 > chunk:
