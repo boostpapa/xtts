@@ -18,10 +18,12 @@ from ttts.bigvgan.env import AttrDict
 
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s5_v2/exp/baseline_udit/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s4_v3/exp/baseline_unet/config.yaml'
-config='/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/exp/baseline_sft/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_bpe_v2/exp/baseline_udit/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/exp/baseline_sft/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/exp/baseline_mrte1_nolangid_bf16_2/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s4_v2/exp/baseline_unet_rd/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_bigvgan_pytorch/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_bigvgan_pytorch_newgpt/config.yaml'
 
 cfg = OmegaConf.load(config)
 
@@ -48,17 +50,14 @@ dvae.eval()
 print(">> vqvae weights restored from:", dvae_path)
 
 ## load vocoder ##
-vocoder_path = 'checkpoints/xttsv2/vocoder'
-vocoder_cfg = 'checkpoints/xttsv2/vocoder.json'
-with open(vocoder_cfg) as f:
-    data = f.read()
-json_config = json.loads(data)
-h = AttrDict(json_config)
-vocoder = Generator(h)
-vocoder_dict = torch.load(vocoder_path, map_location='cpu')
+#vocoder_path = '/speechwork/users/wd007/tts/xtts2/bigvgan/s4_v1/exp/baseline_v2_bigvgan_pytorch/g_00180000'
+#vocoder_cfg = '/speechwork/users/wd007/tts/xtts2/bigvgan/s4_v1/exp/baseline_v2_bigvgan_pytorch/config.json'
+vocoder = Generator(cfg.bigvgan)
+vocoder_dict = torch.load(cfg.bigvgan_checkpoint, map_location='cpu')
 vocoder.load_state_dict(vocoder_dict['generator'])
 vocoder = vocoder.to(device)
 vocoder.eval()
+print(">> Bigvgan weights restored from:", cfg.bigvgan_checkpoint)
 
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/guzong.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/5639-40744-0020.wav'
@@ -79,7 +78,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/taylor1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/duyujiao.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/erba.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/格恩猫-demo.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/格恩猫.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/孙笑川.wav'
@@ -96,9 +94,6 @@ cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/ch
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/22all/22/speak/ZH/wav/22-all_speak_ZH_YouYou_emotion_ZH_309自豪_20230613_20230627-0150729-0155966.wav'
 cond_audio = '/audionas/users/xuanwu/tts/data/bilibili/pgc/xialei/process/flac_cut/xialei3_19.flac'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/houcuicui1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/少女_甜美_哭泣_02.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/010100010068.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/shujuan.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/p_0.wav'
@@ -107,28 +102,37 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/东雪莲.wav'
 cond_audio = '/audionas/users/xuanwu/tts/data/bilibili/auto/cmn_tts_20230101_20231120_v3/select/flac_cut/entertainment_222884913_970197451_507259965_11.flac'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/erbaHappyLow.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_cn2.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luoxiang1.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/jiachun/jiachun/speak/ZH/wav/00000001_000019.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/DianJi_zh.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sunwukong.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/feiben_10s_24k.wav'
 cond_audio = '/speechfs01/users/wd007/tts/src/bilibili/bilibili_tts/zero-shot-test/chenrui.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/split2_J5_TTS_女性_愤怒_4.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xueli.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sange1.wav'
 cond_audio = '/speechfs01/users/siyi/data/DaiMeng/speak/ZH/wav/002741.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/YouTouKuaZhang.wav'
-cond_audio = '/speechwork/users/wd007/tts/yourtts/mix_cn/prompt/chenrui/chenrui2.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/valle2_hard_samples_46_prompt.wav'
-cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/DaiMeng.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/en_test1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xiaotao.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/ugctest/prompt/NvHai.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_en1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/qingnian_angry.mp3'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/wubinbin.mp3'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/少女_甜美_哭泣_02.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/split2_J5_TTS_女性_愤怒_4.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/erba.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sange1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/DaiMeng.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xiaotao.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_en1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sunwukong.wav'
+cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
+cond_audio = '/speechwork/users/wd007/tts/yourtts/mix_cn/prompt/chenrui/chenrui2.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luoxiang1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/ugctest/prompt/NvHai.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
+cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000228.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luofeng.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/tunshixinkong1.wav'
+cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
 
 audio,sr = torchaudio.load(cond_audio)
 if audio.shape[0]>1:
@@ -155,15 +159,6 @@ else:
     tokenizer = spm.SentencePieceProcessor()
     tokenizer.load(cfg.dataset['bpe_model'])
     use_spm = True
-
-diffusion_path = cfg.diffusion_checkpoint
-diffusion = load_model('diffusion', diffusion_path, config, device)
-diffusion.eval()
-print(">> diffusion weights restored from:", diffusion_path)
-diffuser = SpacedDiffusion(use_timesteps=space_timesteps(1000, [15]), model_mean_type='epsilon',
-                           model_var_type='learned_range', loss_type='mse', betas=get_named_beta_schedule('linear', 1000),
-                           conditioning_free=True, ramp_conditioning_free=False, conditioning_free_k=2., sampler='dpm++2m')
-diffusion_conditioning = normalize_tacotron_mel(cond_mel)
 
 
 text = "历史将永远记住同志们的杰出创造和奉献，党和人民感谢你们。"
@@ -196,7 +191,6 @@ text = "床前明月光,疑是地上霜.举头望明月,低头思故乡。"
 text = "天空上，火幕蔓延而开，将方圆数以千万计的人类尽数笼罩。而在火幕扩散时，那绚丽火焰之中的人影也是越来越清晰，片刻后，火焰减弱而下，一道黑衫身影，便是清楚的出现在了这片天地之间。"
 text = "哥, 终于找到你了。别怕，是我，你…哥。你不知道我有多担心，看守的人我已经解决了，对方很快就会发现。"
 text = "嗨！我是TIM，我在B站上运营着两个账号，影视飓风和亿点点不一样。我专注于制作各类视频，包括摄影、科技等领域。虽然我性格有些大男子主义，但我喜欢以理智和条例来处理事情，并且我对提升视频质量有着极高的追求。"
-text = "Hello大家好，2023年的B站百大名单刚刚公布，过几天就会在上海进行线下颁奖。如果你还没看，那么这是今年的完整名单。数据上，今年百大的平均粉丝量为四百二十五点二万，粉丝中位数为三百二十四万，而这，是具体的粉丝量分布。可以看到依然是一百万到两百万粉的up主人数是最多的。"
 text = "亲爱的观众朋友们大家好，这是努力在说标准普通话的宝剑嫂！最近新用了两个产品，然后脸上超级无敌之巨无霸大爆发，中医西医都准备去看一看了，也有点太敏感肌了吧。"
 text = "其次是双人下午茶项目，这个项目包含了精美的下午茶套餐, 让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
 text = "好耶!天依会一直为你加油的! 在不断努力和尝试的过程中，你一定也会容易遇到困难，会感到沮丧，会想要气馁，但不要放弃，没有任何一件事情的完成是简单的. 在无数精彩的作品背后，都是创作者历尽时间和精力磨练而出的汗水. 我相信，只要你热爱，只要并坚持，你一定可以写出属于自己的精彩作品. 在你努力的时候, 我也会一直在你的身边，用歌声为你加油, 祝愿你在写作的旅程中，收获满满的喜悦和成长，去创造属于自己的奇迹吧！"
@@ -211,27 +205,35 @@ text = "好耶!天依会一直为你加油的! 在不断努力和尝试的过程
 text = "once upon a time, there lived in a certain village. a little country girl, the prettiest creature who was ever seen. her mother was accessibly fond of her and her grandmother doted on her still more."
 text = "1、先把五花肉切成带皮的比较小的一块一块的肉块。2、锅里放油，热后放入白糖，炒到起泡为止，倒入切好的肉，辅料，大火爆炒1分钟。3、按个人口味加入适量调料：咸盐，鸡精，料酒，陈醋，老抽.最后加水淹没肉大火煮沸。"
 text = "庆历四年春，滕子京谪守巴陵郡。越明年，政通人和，百废具兴，乃重修岳阳楼，增其旧制，刻唐贤今人诗赋于其上，属予作文以记之。予观夫巴陵胜状，在洞庭一湖。衔远山，吞长江，浩浩汤汤，横无际涯，朝晖夕阴，气象万千，此则岳阳楼之大观也，前人之述备矣。然则北通巫峡，南极潇湘，迁客骚人，多会于此，览物之情，得无异乎？"
-text = "兔年春节不复阳！本集没有任何广告，是近百名冒险伙伴的在抗阳战场上的经验总结，欢迎收藏转发分享给你在乎的人！ 本视频点赞过一万，马上解锁 走走而已超燃特别跟练"
 text = "但会四处游牧。 在黄昏时分进食，夜间飞行，在飞行时呼叫，但大部分活动都在白天进行。"
-text = "接下来给大家介绍一个团购产品--深圳绿景酒店1晚加双人下午茶。首先，让我们来看看这个团购的价格,这个团购包含的房间门市价是每晚1888元，直播间售价1晚住宿加其他项目只需要1618元。接下来，我们来详细介绍一下这个团购的各个项目。首先是住宿项目，房型有高级双床房或高级大床房，可任选其中一个房型。这两种房型都有38平米的面积，位于8-12层，视野开阔，房间内有窗户，可以欣赏室外的城景或花园景,无论是商务出差还是休闲旅游，都能满足您的需求。其次是双人下午茶项目，这个项目包含了精美的下午茶套餐，让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
 text = "各位朋友，律政之海中的泛舟人罗翔在此。于B站的广袤平台上，我精心打理'罗翔'说刑法这处精神家园。这个账号主要发布与法学教育相关的视频内容，特别是刑法知识的普及与解析."
 text = "是呀，他拼命抢球头盔都掉了。"
 text = "埃菲尔铁塔是世界上最著名的名胜之一。"
-text = "香格里拉，松树和栎树自然杂交林中，卓玛和妈妈正在寻找着一种精灵般的食物——松茸。"
-text="我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
 text = "是谁给你的胆量这么跟我说话，嗯, 是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
-text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少."
-text = "顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。"
 text="Joyful jaguars joyfully jumped joyful joyful jumps."
-text="人间灯火倒映湖中，她的渴望让静水泛起涟漪。若代价只是孤独，那就让这份愿望肆意流淌。流入她所注视的世间，也流入她如湖水般澄澈的目光。"
 text="哦，我的天，那确实我觉得，我觉得就是守时应该是一个很基本的一个要求吧，就不论说是约好了一起出去玩儿，还是说约好了工作上面的事情。我觉得不守时的话，确实会给就是身边人造成很大的麻烦。"
 text="This perfume has gotten me the most compliments when going out in public. This is a product I think should be viral, but it's not yet, and I kind of want to gate keep it because I don't want it to sell out. That you guys need this. The thing that's in right now is smelling just so dark and mysterious and rich. And i've got the golden recommendation for you. If you don't wanna be stared at, don't buy this perfume. If you don't wanna receive compliments. I don't buy this perfume. But if you want compliments and attention, then you're gonna wanna buy this perfume. Something about this perfume scent just pulls you in. It's going to last you all day long. You only need a little bit of it. Hmm. It's all fragrance floor noir. So when you get it, let me know and thank me later."
 text="因为在那个时候呢，有各种各样的广告啊，然后呢包括一些代言的一些收入，啊然后当时的，呃，当时呢有因为我有很多呃，大学的老师是在呃这个台曾经任职过的，他们当时也有非常多的。比方说啧呃，因为现在也没有像，就是以前的话，也没有像现在的这个产配音的产业这么齐全嘛。"
 text = "Mr. Brown, what is this on the wall?"
 text = "瓶子倒了，水倒了出来, 大都市的人口都很多, 汤匙、钥匙都放在桌子上. 有空闲就好好读书，尽量少说空话. 据史书记载，王昭君多才多艺，每逢三年五载汉匈首脑聚会，她都要载歌载舞。陈涛参加体育锻炼缺乏毅力、一曝十寒的事情在校会上被曝光，他感到十分羞愧。他那像哄小孩似的话，引得人们哄堂大笑，大家听了一哄而散。"
-text = "把我的脚放在他们脚下，求他们踩，求他们原谅吗？难道真的要这样吗？你是真的不可理喻，真的不可理喻！森琦老师，我是真的不懂，为什么这么难的需求要找到我！你真的觉得这个需求我能搞得定吗？别那么异想天开了好不好！好不好！"
 text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, Open-Sora not only democratizes access to advanced video generation techniques, but also offers a streamlined and user-friendly platform that simplifies the complexities of video production. With Open-Sora, we aim to inspire innovation, creativity, and inclusivity in the realm of content creation."
 text = "What time do you usually go to bed? 我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
+text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少."
+text = "香格里拉，松树和栎树自然杂交林中，卓玛和妈妈正在寻找着一种精灵般的食物——松茸。"
+text = "Hello大家好，2023年的B站百大名单刚刚公布，过几天就会在上海进行线下颁奖。如果你还没看，那么这是今年的完整名单。数据上，今年百大的平均粉丝量为四百二十五点二万，粉丝中位数为三百二十四万，而这，是具体的粉丝量分布。可以看到依然是一百万到两百万粉的up主人数是最多的。"
+text = "把我的脚放在他们脚下，求他们踩，求他们原谅吗？难道真的要这样吗？你是真的不可理喻，真的不可理喻！森琦老师，我是真的不懂，为什么这么难的需求要找到我！你真的觉得这个需求我能搞得定吗？别那么异想天开了好不好！好不好！"
+text = "顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。"
+text="我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
+text="人间灯火倒映湖中，她的渴望让静水泛起涟漪。若代价只是孤独，那就让这份愿望肆意流淌。流入她所注视的世间，也流入她如湖水般澄澈的目光。"
+text = "兔年春节不复阳！本集没有任何广告，是近百名冒险伙伴的在抗阳战场上的经验总结，欢迎收藏转发分享给你在乎的人！ 本视频点赞过一万，马上解锁 走走而已超燃特别跟练"
+text = "接下来给大家介绍一个团购产品--深圳绿景酒店1晚加双人下午茶。首先，让我们来看看这个团购的价格,这个团购包含的房间门市价是每晚1888元，直播间售价1晚住宿加其他项目只需要1618元。接下来，我们来详细介绍一下这个团购的各个项目。首先是住宿项目，房型有高级双床房或高级大床房，可任选其中一个房型。这两种房型都有38平米的面积，位于8-12层，视野开阔，房间内有窗户，可以欣赏室外的城景或花园景,无论是商务出差还是休闲旅游，都能满足您的需求。其次是双人下午茶项目，这个项目包含了精美的下午茶套餐，让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
+text = "幽暗深邃的轮回通道内。“终于看到尽头了。”星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。“主人，我们终于抵达起源大陆了。”界兽摩罗撒也很兴奋。“嗯，终于来了。”罗峰也露出笑容。"
+text = "星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。"
+text = "断东河一脉的三大传承之一《不死河》，如果练成，即可凭借一滴血再度复活。罗峰和界兽摩罗撒都是完美神体，达到十万倍生命层次，他们的生命拥有诸多匪夷所思之处，他们能隔绝生命气息，令气息锁定无效。能模糊天机，甚至能千变万化，毫无破绽。无需修炼《不死河》，他们的一根头发、一滴血，都能够借此再度重生。"
+text = "天之道，有所得，必有所失，现实就是这样的，有所得必定会有所失。是啊，妖，变成妖你们就能在一起了。要离开修罗城，你给得了我想要的吗？我们宝青坊，妖怪法宝的锻造工坊。"
+
+
+
 
 '''
 pinyin = ' '.join(lazy_pinyin(text, style=Style.TONE3, neutral_tone_with_five=True))
@@ -296,7 +298,7 @@ for sent in sentences:
     text_tokens = F.pad(text_tokens, (0,1), value=1)
     text_tokens = text_tokens.to(device)
     print(text_tokens)
-    print(text_tokens.shape)
+    print(f"text_tokens shape: {text_tokens.shape}")
     with torch.no_grad():
         codes = gpt.inference_speech(auto_conditioning, text_tokens,
                                 cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
@@ -311,8 +313,9 @@ for sent in sentences:
                                 max_generate_length=max_mel_tokens)
         print(codes)
         print(codes.shape)
+        print(f"codes shape: {codes.shape}")
         codes = codes[:, :-2]
-        print(codes.shape)
+        print(f"codes shape: {codes.shape}")
         mel1, _ = dvae.decode(codes)
         wav1 = vocos.decode(mel1.detach().cpu())
         #torchaudio.save('gen1.wav',wav1.detach().cpu(), 24000)
@@ -320,17 +323,27 @@ for sent in sentences:
         torch.clip(wav1, -32767.0, 32767.0)
         wavs1.append(wav1)
 
-        latent = gpt(auto_conditioning, text_tokens,
+        latent, text_lens_out, code_lens_out = \
+                    gpt(auto_conditioning, text_tokens,
                     torch.tensor([text_tokens.shape[-1]], device=text_tokens.device), codes,
                     torch.tensor([codes.shape[-1]*gpt.mel_length_compression], device=text_tokens.device),
                     cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
-                    return_latent=True, clip_inputs=False).transpose(1,2)
-        print(latent.shape)
+                    return_latent=True, clip_inputs=False)
+        latent = latent.transpose(1, 2)
+        latent_list = []
+        for lat, t_len in zip(latent, text_lens_out):
+            lat = lat[:, t_len:]
+            latent_list.append(lat)
+        latent = torch.stack(latent_list)
+        print(f"latent shape: {latent.shape}")
 
-        wav, _ = vocoder(latent, auto_conditioning.transpose(1, 2).to(device))
-        wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 1.0 * wav.detach()
+        print(f"auto_conditioning shape: {auto_conditioning.shape}")
+        wav, _ = vocoder(latent.transpose(1, 2), auto_conditioning.transpose(1,2))
+        wav = wav.squeeze(1).cpu()
+        #wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 1.0 * wav.detach()
+        wav = 32767 * wav
         torch.clip(wav, -32767.0, 32767.0)
-        print(wav.shape)
+        print(f"wav shape: {wav.shape}")
         wavs.append(wav)
         #wavs.append(zero_wav)
 
