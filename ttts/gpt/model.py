@@ -778,9 +778,9 @@ class UnifiedVoice(nn.Module):
         return gen[:, trunc_index:]
 
     def rearrange_sequence(self, conds, text_emb, text_emb_len):
-        text_tokens = unpad_sequence(text_emb, text_emb_len, batch_first=True)
-        lm_input = [torch.concat([conds[i], text_emb[i]], dim=0)
-                    for i in range(len(text_tokens))]
+        text_embs = unpad_sequence(text_emb, text_emb_len, batch_first=True)
+        lm_input = [torch.concat([conds[i], text_embs[i]], dim=0)
+                    for i in range(len(text_embs))]
         lm_input_len = torch.tensor([i.size(0) for i in lm_input], dtype=torch.int32)
         lm_input = pad_sequence(lm_input, batch_first=True, padding_value=IGNORE_ID)
         return lm_input, lm_input_len
@@ -799,9 +799,18 @@ class UnifiedVoice(nn.Module):
         # +1 for the start_audio_token
         fake_inputs = torch.full((emb.shape[0], emb.shape[1]+1,), fill_value=1, dtype=torch.long,
                                  device=text_inputs.device)
+        # mask 
+        attn_mask = torch.full((emb.shape[0], emb.shape[1]+1,), fill_value=1, dtype=torch.long,
+                                 device=text_inputs.device)
 
         for i in range(emb.shape[0]):
             fake_inputs[i, emb_len[i]] = self.start_mel_token
+            fake_inputs[i, emb_len[i]+1:] = self.start_mel_token
+            attn_mask[i, emb_len[i]+1:] = 0
+        #print(fake_inputs)
+        #print(attn_mask)
+
+        trunc_index = fake_inputs.shape[1]
         if input_tokens is None:
             inputs = fake_inputs
         else:
@@ -813,6 +822,7 @@ class UnifiedVoice(nn.Module):
         logits_processor = LogitsProcessorList([TypicalLogitsWarper(mass=typical_mass)]) if typical_sampling else LogitsProcessorList()
         max_new_tokens = self.max_mel_tokens - 1 if max_generate_length is None else max_generate_length
 
+                                            #attention_mask=attn_mask,
         gen = self.inference_model.generate(inputs,
                                             bos_token_id=self.start_mel_token,
                                             pad_token_id=self.stop_mel_token,
@@ -821,13 +831,8 @@ class UnifiedVoice(nn.Module):
                                             logits_processor=logits_processor,
                                             num_return_sequences=num_return_sequences,
                                             **hf_generate_kwargs)
-        gen_list = []
-        for g, t_len in zip(gen, emb_len):
-            g = gen[: t_len:]
-            gen_list.append(g)
-        gen = torch.stack(gen_list)
-
-        return gen
+        #print(gen)
+        return gen[:, trunc_index:]
 
 if __name__ == '__main__':
     gpt = UnifiedVoice(model_dim=256, heads=4, train_solo_embeddings=True, use_mel_codes_as_input=True, max_conditioning_inputs=4)
