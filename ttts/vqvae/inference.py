@@ -97,9 +97,9 @@ def main():
                 wave = transform(wave)
             mel = mel_extractor(wave)
 
+            fname = re.split(r'/|\.', wav_path)[-2]
             if args.infer:
                 mel_recon, mel_img, mel_recon_img = infer(mel, dvae, device=device)
-                fname = re.split(r'/|\.', wav_path)[-2]
                 cv2.imwrite(f"{args.outdir}/{fname}.png", mel_img)
                 cv2.imwrite(f"{args.outdir}/{fname}_recon.png", mel_recon_img)
                 if args.npmel:
@@ -112,6 +112,7 @@ def main():
                     torchaudio.save(f"{args.outdir}/{fname}_recon.wav", wav_recon.detach().cpu(), sample_rate)
             elif args.vqcode:
                 code = extract_vq(mel, dvae, device=device)
+                np.save(f"{args.outdir}/{fname}_code.npy", code.detach().cpu().numpy())
                 print(code.tolist())
 
 
