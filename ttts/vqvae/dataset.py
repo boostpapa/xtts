@@ -17,10 +17,10 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
 
     def __init__(self, cfg, audio_paths, is_eval=False):
 
-        self.wav_paths = []
+        self.datalist = []
         with open(audio_paths, 'r', encoding='utf8') as fin:
             for line in fin:
-                self.wav_paths.append(line.strip())
+                self.datalist.append(line.strip())
 
         self.pad_to = cfg['dataset']['pad_to_samples']
         self.squeeze = cfg['dataset']['squeeze']
@@ -33,14 +33,16 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         try:
-            wav_path = self.wav_paths[index]
-            wave = load_audio(wav_path, self.sample_rate)
+            line = self.datalist[index]
+            strs = line.strip().split("|")
+            wav_path = line if len(strs) == 1 else strs[1]
+            wav = load_audio(wav_path, self.sample_rate)
             #print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
-            if wave is None:
+            if wav is None:
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
 
-            mel = self.mel_extractor(wave)
+            mel = self.mel_extractor(wav)
             #print(f"mel shape: {mel.shape}")
 
             if mel.shape[-1] >= self.pad_to:
@@ -64,8 +66,7 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         return len(self.wav_paths)
 
 
-class MelCollater():
-
+class MelCollator:
     def __init__(self, cfg):
         self.cfg = cfg
 
@@ -89,7 +90,7 @@ if __name__ == '__main__':
     }
     cfg = json.load(open('configs/config.json'))
     ds = PreprocessedMelDataset(cfg)
-    dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=MelCollater(cfg))
+    dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=MelCollator(cfg))
     i = 0
     for b in dl:
         #pass

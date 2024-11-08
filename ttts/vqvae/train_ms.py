@@ -1,14 +1,10 @@
-import copy
-from datetime import datetime
+
 import json
 from omegaconf import OmegaConf
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, summarize, update_moving_average
-from ttts.utils.utils import get_logger
-from ttts.utils.checkpoint import load_trained_modules
-from ttts.vqvae.dataset import PreprocessedMelDataset, MelCollater
+from ttts.vqvae.dataset import PreprocessedMelDataset, MelCollator
 import torch
 import os
 from torch.utils.data import DataLoader
@@ -26,23 +22,6 @@ from ttts.vqvae.xtts_dvae import DiscreteVAE
 logging.getLogger("numba").setLevel(logging.WARNING)
 
 
-def set_requires_grad(model, val):
-    for p in model.parameters():
-        p.requires_grad = val
-
-
-def get_grad_norm(model):
-    total_norm = 0
-    for name, p in model.named_parameters():
-        try:
-            param_norm = p.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
-        except:
-            print(name)
-    total_norm = total_norm ** (1. / 2) 
-    return total_norm
-
-
 class Trainer(object):
     def __init__(self, args):
         if args.config.endswith(".json"):
@@ -52,15 +31,16 @@ class Trainer(object):
             self.cfg = OmegaConf.load(args.config)
         self.train_dataset = PreprocessedMelDataset(self.cfg, self.cfg.dataset['training_files'])
         self.eval_dataset = PreprocessedMelDataset(self.cfg,  self.cfg.dataset['validation_files'], is_eval=True)
-        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=MelCollater(self.cfg))
-        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader, collate_fn=MelCollater(self.cfg))
+        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=MelCollator(self.cfg))
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader, collate_fn=MelCollator(self.cfg))
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
         self.log_interval = self.cfg.train['log_interval']
         self.num_epochs = self.cfg.train['epochs']
         self.batch_size = self.cfg.dataloader['batch_size']
         self.accum_grad = self.cfg.train['accum_grad']
-        self.c_comm = 0.25
+        if 'use_simvq' in self.cfg.vqvae:
+            self.c_comm = 1.0 if self.cfg.vqvae['use_simvq'] else 0.25
         self.lr = self.cfg.train['lr']
         self.weight_decay = self.cfg.train['weight_decay']
         self.precision = self.cfg.train['precision']
@@ -71,7 +51,7 @@ class Trainer(object):
         print(">> training precision:", precision)
 
         self.vqvae = DiscreteVAE(**self.cfg['vqvae'])
-        if 'pretrain_model' in self.cfg['train']:
+        if 'pretrain_model' in self.cfg.train:
             model_pth = self.cfg.train['pretrain_model']
             logging.warning("loading pretrain model: {}".format(model_pth))
             dvae_checkpoint = torch.load(model_pth, map_location=torch.device("cpu"))
@@ -103,13 +83,6 @@ class Trainer(object):
         if self.grad_clip <= 0:
             self.grad_clip = 50
         self.global_step = 0
-
-    def _get_target_encoder(self, model):
-        target_encoder = copy.deepcopy(model)
-        set_requires_grad(target_encoder, False)
-        for p in target_encoder.parameters():
-            p.DO_NOT_TRAIN = True
-        return target_encoder
 
     def save_checkpoint(self, path):
         if self.accelerator.is_main_process:
@@ -196,9 +169,8 @@ class Trainer(object):
                     ssim_losses += ssim_loss / self.accum_grad
                     commitment_losses += commitment_loss / self.accum_grad
 
-                grad_norm = get_grad_norm(self.vqvae)
                 if accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(self.vqvae.parameters(), self.grad_clip)
+                    grad_norm = accelerator.clip_grad_norm_(self.vqvae.parameters(), self.grad_clip)
                 accelerator.wait_for_everyone()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
@@ -217,14 +189,6 @@ class Trainer(object):
                     self.logger.info("Evaluating ...")
                     losses = self.eval()
                     self.logger.info([x.item() for x in losses])
-                 
-                    '''
-                    keep_ckpts = self.cfg['train']['keep_ckpts']
-                    if keep_ckpts > 0:
-                        clean_checkpoints(path_to_models=self.model_dir,
-                                          n_ckpts_to_keep=keep_ckpts, sort_by_time=True)
-                    self.save_checkpoint(self.model_dir.joinpath(f"model_{self.global_step}.pth"))
-                    '''
                     scalar_dict = {"loss": total_losses, "loss_mel": recon_losses, "loss_commitment": commitment_losses,
                                    "loss/grad": grad_norm}
                     summarize(
@@ -274,6 +238,5 @@ if __name__ == '__main__':
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
     trainer = Trainer(args)
-    # trainer.load('~/tortoise_plus_zh/ttts/vqvae/logs/2023-11-04-00-25-39/model-14.pt')
-     
+
     trainer.train()

@@ -130,6 +130,52 @@ class Quantize(nn.Module):
         return F.embedding(embed_id, self.embed.transpose(0, 1))
 
 
+class SimQuantize(nn.Module):
+    def __init__(self, dim, n_embed, beta=0.25, new_return_order=False):
+        super().__init__()
+
+        self.dim = dim
+        self.n_embed = n_embed
+        self.beta = beta
+        self.new_return_order = new_return_order
+
+        self.embedding = nn.Embedding(self.n_embed, self.dim)
+        nn.init.normal_(self.embedding.weight, mean=0, std=self.dim ** -0.5)
+        for p in self.embedding.parameters():
+            p.requires_grad = False
+        # Sim weight
+        self.embedding_proj = nn.Linear(self.dim, self.dim)
+
+    def forward(self, z, return_soft_codes=False):
+        z_flattened = z.view(-1, self.dim)
+        quant_codebook = self.embedding_proj(self.embedding.weight)
+
+        dist = z_flattened.pow(2).sum(1, keepdim=True) - 2 * z_flattened @ quant_codebook + \
+            quant_codebook.pow(2).sum(0, keepdim=True)
+        soft_codes = -dist
+
+        min_encoding_indices = torch.argmin(dist, dim=1)
+        z_q = F.embedding(min_encoding_indices, quant_codebook).view(z.shape)
+
+        # compute loss for embedding
+        commit_loss = self.beta * torch.mean((z_q.detach() - z) ** 2) + \
+            torch.mean((z_q - z.detach()) ** 2)
+
+        # preserve gradients
+        z_q = z + (z_q - z).detach()
+
+        if return_soft_codes:
+            return z_q, commit_loss, min_encoding_indices, soft_codes.view(z.shape[:-1] + (-1,))
+        elif self.new_return_order:
+            return z_q, min_encoding_indices, commit_loss
+        else:
+            return z_q, commit_loss, min_encoding_indices
+
+    def embed_code(self, embed_id):
+        quant_codebook = self.embedding_proj(self.embedding.weight)
+        return F.embedding(embed_id, quant_codebook)
+
+
 # Fits a soft-discretized input to a normal-PDF across the specified dimension.
 # In other words, attempts to force the discretization function to have a mean equal utilization across all discrete
 # values with the specified expected variance.
@@ -219,6 +265,7 @@ class DiscreteVAE(nn.Module):
         straight_through=False,
         normalization=None,  # ((0.5,) * 3, (0.5,) * 3),
         record_codes=False,
+        use_simvq=False,
         discretization_loss_averaging_steps=100,
         lr_quantizer_args={},
     ):
@@ -295,7 +342,10 @@ class DiscreteVAE(nn.Module):
         self.loss_fn = F.smooth_l1_loss if smooth_l1_loss else F.mse_loss
         self.ssim_loss_weight = ssim_loss_weight
         self.loss_ssim = SSIM(size_average=True, nonnegative_ssim=False) if ssim_loss_weight > 0 else None
-        self.codebook = Quantize(codebook_dim, num_tokens, new_return_order=True)
+        if use_simvq:
+            self.codebook = SimQuantize(codebook_dim, num_tokens, new_return_order=True)
+        else:
+            self.codebook = Quantize(codebook_dim, num_tokens, new_return_order=True)
 
         # take care of normalization within class
         self.normalization = normalization
@@ -381,7 +431,7 @@ class DiscreteVAE(nn.Module):
         # reconstruction loss
         out = out[..., :img.shape[-1]]
         recon_loss = self.loss_fn(img, out, reduction="mean")
-        ssim_loss = torch.zeros(size = (1,)).cuda()
+        ssim_loss = torch.zeros(size=(1,)).cuda()
         if self.ssim_loss_weight > 0:
             img1 = img.unsqueeze(1)
             out1 = out.unsqueeze(1)
@@ -395,7 +445,7 @@ class DiscreteVAE(nn.Module):
             codes = codes.flatten()
             l = codes.shape[0]
             i = self.code_ind if (self.codes.shape[0] - self.code_ind) > l else self.codes.shape[0] - l
-            self.codes[i : i + l] = codes.cpu()
+            self.codes[i:i+l] = codes.cpu()
             self.code_ind = self.code_ind + l
             if self.code_ind >= self.codes.shape[0]:
                 self.code_ind = 0
