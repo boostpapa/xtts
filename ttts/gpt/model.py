@@ -346,11 +346,15 @@ class UnifiedVoice(nn.Module):
             self.conditioning_encoder = ConditioningEncoder(100, model_dim, num_attn_heads=heads)
             self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=model_dim, num_latents=self.cond_num)
         elif condition_type == "conformer_perceiver" or condition_type == "conformer_encoder":
+            macaron_style = condition_module['macaron_style'] if 'macaron_style' in condition_module else False
+            use_sdpa = condition_module['use_sdpa'] if 'use_sdpa' in condition_module else False
             self.conditioning_encoder = ConformerEncoder(input_size=100,
                                                          output_size=condition_module['output_size'],
                                                          linear_units=condition_module['linear_units'],
                                                          attention_heads=condition_module['attention_heads'],
                                                          num_blocks=condition_module['num_blocks'],
+                                                         macaron_style=macaron_style,
+                                                         use_sdpa=use_sdpa,
                                                          input_layer=condition_module['input_layer'])
             if condition_type == "conformer_perceiver":
                 self.perceiver_encoder = PerceiverResampler(model_dim, dim_context=condition_module['output_size'],

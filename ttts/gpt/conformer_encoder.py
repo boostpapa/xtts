@@ -7,6 +7,7 @@ from ttts.gpt.conformer.subsampling import Conv2dSubsampling4, Conv2dSubsampling
     Conv2dSubsampling8, LinearNoSubsampling, Conv2dSubsampling2
 from ttts.gpt.conformer.embedding import PositionalEncoding, RelPositionalEncoding, NoPositionalEncoding
 from ttts.gpt.conformer.attention import MultiHeadedAttention, RelPositionMultiHeadedAttention
+from ttts.gpt.conformer.attention import T_CACHE
 from ttts.utils.utils import make_pad_mask, mask_to_bias
 
 
@@ -258,7 +259,7 @@ class ConformerEncoderLayer(nn.Module):
             x = self.norm_mha(x)
 
         x_att, new_att_cache = self.self_attn(
-            x, x, x, mask, pos_emb, att_cache)x = residual + self.dropout(x_att)
+            x, x, x, mask, pos_emb, att_cache)
         x = residual + self.dropout(x_att)
         if not self.normalize_before:
             x = self.norm_mha(x)
