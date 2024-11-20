@@ -34,19 +34,19 @@ def get_logger(model_dir, filename="train.log"):
 
 
 def load_audio(audiopath, sampling_rate):
+    '''
     if audiopath.endswith(".m4a"):
         sound = AudioSegment.from_file(audiopath)
         buffer = BytesIO()
         sound.export(buffer, format="wav")
         buffer.seek(0)
         audio, sr = torchaudio.load(buffer)
-        '''
-        audio = np.array(sound.get_array_of_samples(), dtype=np.float32).reshape((sound.channels,-1)) / (1<<(8*sound.sample_width-1))
-        audio = torch.from_numpy(audio)
-        sr = sound.frame_rate
-        '''
+        #audio = np.array(sound.get_array_of_samples(), dtype=np.float32).reshape((sound.channels,-1)) / (1<<(8*sound.sample_width-1))
+        #audio = torch.from_numpy(audio)
+        #sr = sound.frame_rate
     else:
-        audio, sr = torchaudio.load(audiopath)
+    '''
+    audio, sr = torchaudio.load(audiopath)
     #print(f"wave shape: {audio.shape}, sample_rate: {sr}")
 
     if audio.size(0) > 1:  # mix to mono
