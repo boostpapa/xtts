@@ -147,15 +147,21 @@ class SimQuantize(nn.Module):
         self.embedding_proj = nn.Linear(self.dim, self.dim)
 
     def forward(self, z, return_soft_codes=False):
-        z_flattened = z.view(-1, self.dim)
+        z_flattened = z.reshape(-1, self.dim)
         quant_codebook = self.embedding_proj(self.embedding.weight)
 
-        dist = z_flattened.pow(2).sum(1, keepdim=True) - 2 * z_flattened @ quant_codebook + \
-            quant_codebook.pow(2).sum(0, keepdim=True)
+        dist = z_flattened.pow(2).sum(1, keepdim=True) - \
+            2 * z_flattened @ quant_codebook.transpose(0, 1) + \
+            quant_codebook.transpose(0, 1).pow(2).sum(0, keepdim=True)
+        '''
+        dist = torch.sum(z_flattened ** 2, dim=1, keepdim=True) + \
+            torch.sum(quant_codebook**2, dim=1) - 2 * \
+            torch.einsum('bd,dn->bn', z_flattened, rearrange(quant_codebook, 'n d -> d n'))
+        '''
         soft_codes = -dist
 
-        min_encoding_indices = torch.argmin(dist, dim=1)
-        z_q = F.embedding(min_encoding_indices, quant_codebook).view(z.shape)
+        min_encoding_indices = torch.argmin(dist, dim=1).view(*z.shape[:-1])
+        z_q = F.embedding(min_encoding_indices, quant_codebook)
 
         # compute loss for embedding
         commit_loss = self.beta * torch.mean((z_q.detach() - z) ** 2) + \

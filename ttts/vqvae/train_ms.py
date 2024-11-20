@@ -7,6 +7,7 @@ from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, 
 from ttts.vqvae.dataset import PreprocessedMelDataset, MelCollator
 import torch
 import os
+from setproctitle import setproctitle
 from torch.utils.data import DataLoader
 from torch import nn
 from torch.optim import AdamW
@@ -38,6 +39,7 @@ class Trainer(object):
         self.log_interval = self.cfg.train['log_interval']
         self.num_epochs = self.cfg.train['epochs']
         self.batch_size = self.cfg.dataloader['batch_size']
+        self.c_comm = 0.25
         self.accum_grad = self.cfg.train['accum_grad']
         if 'use_simvq' in self.cfg.vqvae:
             self.c_comm = 1.0 if self.cfg.vqvae['use_simvq'] else 0.25
@@ -136,6 +138,7 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = self.accelerator.device
+        setproctitle("train_vqvae")
         if accelerator.is_main_process:
             self.logger.info(self.cfg)
             writer = SummaryWriter(log_dir=self.model_dir)

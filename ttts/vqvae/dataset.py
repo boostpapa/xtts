@@ -63,7 +63,7 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         return mel
 
     def __len__(self):
-        return len(self.wav_paths)
+        return len(self.datalist)
 
 
 class MelCollator:
