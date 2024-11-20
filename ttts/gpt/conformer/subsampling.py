@@ -302,6 +302,7 @@ class Conv2dSubsampling8(BaseSubsampling):
         dropout_rate (float): Dropout rate.
 
     """
+
     def __init__(self, idim: int, odim: int, dropout_rate: float,
                  pos_enc_class: torch.nn.Module):
         """Construct an Conv2dSubsampling8 object."""
