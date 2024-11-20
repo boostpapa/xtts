@@ -7,7 +7,7 @@ from ttts.gpt.conformer.subsampling import Conv2dSubsampling4, Conv2dSubsampling
     Conv2dSubsampling8, LinearNoSubsampling, Conv2dSubsampling2
 from ttts.gpt.conformer.embedding import PositionalEncoding, RelPositionalEncoding, NoPositionalEncoding
 from ttts.gpt.conformer.attention import MultiHeadedAttention, RelPositionMultiHeadedAttention
-from ttts.utils.utils import make_pad_mask
+from ttts.utils.utils import make_pad_mask, mask_to_bias
 
 
 class PositionwiseFeedForward(torch.nn.Module):
@@ -176,11 +176,8 @@ class ConformerEncoderLayer(nn.Module):
         normalize_before (bool):
             True: use layer_norm before each sub-block.
             False: use layer_norm after each sub-block.
-        concat_after (bool): Whether to concat attention layer's input and
-            output.
-            True: x -> x + linear(concat(x, att(x)))
-            False: x -> x + att(x)
     """
+
     def __init__(
         self,
         size: int,
@@ -190,7 +187,6 @@ class ConformerEncoderLayer(nn.Module):
         conv_module: Optional[nn.Module] = None,
         dropout_rate: float = 0.1,
         normalize_before: bool = True,
-        concat_after: bool = False,
     ):
         """Construct an EncoderLayer object."""
         super().__init__()
@@ -213,11 +209,6 @@ class ConformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
         self.size = size
         self.normalize_before = normalize_before
-        self.concat_after = concat_after
-        if self.concat_after:
-            self.concat_linear = nn.Linear(size + size, size)
-        else:
-            self.concat_linear = nn.Identity()
 
     def forward(
         self,
@@ -225,9 +216,10 @@ class ConformerEncoderLayer(nn.Module):
         mask: torch.Tensor,
         pos_emb: torch.Tensor,
         mask_pad: torch.Tensor = torch.ones((0, 0, 0), dtype=torch.bool),
-        att_cache: torch.Tensor = torch.zeros((0, 0, 0, 0)),
+        att_cache: T_CACHE = (torch.zeros(
+            (0, 0, 0, 0)), torch.zeros((0, 0, 0, 0))),
         cnn_cache: torch.Tensor = torch.zeros((0, 0, 0, 0)),
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, T_CACHE, torch.Tensor]:
         """Compute encoded features.
 
         Args:
@@ -266,12 +258,8 @@ class ConformerEncoderLayer(nn.Module):
             x = self.norm_mha(x)
 
         x_att, new_att_cache = self.self_attn(
-            x, x, x, mask, pos_emb, att_cache)
-        if self.concat_after:
-            x_concat = torch.cat((x, x_att), dim=-1)
-            x = residual + self.concat_linear(x_concat)
-        else:
-            x = residual + self.dropout(x_att)
+            x, x, x, mask, pos_emb, att_cache)x = residual + self.dropout(x_att)
+        x = residual + self.dropout(x_att)
         if not self.normalize_before:
             x = self.norm_mha(x)
 
@@ -315,7 +303,7 @@ class BaseEncoder(torch.nn.Module):
         input_layer: str = "conv2d",
         pos_enc_layer_type: str = "abs_pos",
         normalize_before: bool = True,
-        concat_after: bool = False,
+        use_sdpa: bool = False,
     ):
         """
         Args:
@@ -336,10 +324,6 @@ class BaseEncoder(torch.nn.Module):
             normalize_before (bool):
                 True: use layer_norm before each sub-block of a layer.
                 False: use layer_norm after each sub-block of a layer.
-            concat_after (bool): whether to concat attention layer's input
-                and output.
-                True: x -> x + linear(concat(x, att(x)))
-                False: x -> x + att(x)
             static_chunk_size (int): chunk size for static chunk training and
                 decoding
             use_dynamic_chunk (bool): whether use dynamic chunk size for
@@ -383,6 +367,7 @@ class BaseEncoder(torch.nn.Module):
 
         self.normalize_before = normalize_before
         self.after_norm = torch.nn.LayerNorm(output_size, eps=1e-5)
+        self.use_sdpa = use_sdpa
 
     def output_size(self) -> int:
         return self._output_size
@@ -416,6 +401,8 @@ class BaseEncoder(torch.nn.Module):
         xs, pos_emb, masks = self.embed(xs, masks)
         chunk_masks = masks
         mask_pad = masks  # (B, 1, T/subsample_rate)
+        if self.use_sdpa:
+            chunk_masks = mask_to_bias(chunk_masks, xs.dtype)
         for layer in self.encoders:
             xs, chunk_masks, _, _ = layer(xs, chunk_masks, pos_emb, mask_pad)
         if self.normalize_before:
@@ -428,6 +415,7 @@ class BaseEncoder(torch.nn.Module):
 
 class ConformerEncoder(BaseEncoder):
     """Conformer encoder module."""
+
     def __init__(
         self,
         input_size: int,
@@ -439,10 +427,17 @@ class ConformerEncoder(BaseEncoder):
         input_layer: str = "conv2d",
         pos_enc_layer_type: str = "rel_pos",
         normalize_before: bool = True,
-        concat_after: bool = False,
         macaron_style: bool = False,
         use_cnn_module: bool = True,
         cnn_module_kernel: int = 15,
+        query_bias: bool = True,
+        key_bias: bool = True,
+        value_bias: bool = True,
+        use_sdpa: bool = False,
+        n_kv_head: Optional[int] = None,
+        head_dim: Optional[int] = None,
+        mlp_type: str = 'position_wise_feed_forward',
+        mlp_bias: bool = True,
     ):
         """Construct ConformerEncoder
 
@@ -464,7 +459,7 @@ class ConformerEncoder(BaseEncoder):
         super().__init__(input_size, output_size, attention_heads,
                          linear_units, num_blocks, dropout_rate,
                          input_layer, pos_enc_layer_type, normalize_before,
-                         concat_after)
+                         use_sdpa,)
 
         activation = torch.nn.SiLU()
 
@@ -477,6 +472,12 @@ class ConformerEncoder(BaseEncoder):
             attention_heads,
             output_size,
             dropout_rate,
+            query_bias,
+            key_bias,
+            value_bias,
+            use_sdpa,
+            n_kv_head,
+            head_dim,
         )
 
         # feed-forward module definition
@@ -498,13 +499,10 @@ class ConformerEncoder(BaseEncoder):
                 output_size,
                 encoder_selfattn_layer(*encoder_selfattn_layer_args),
                 positionwise_layer(*positionwise_layer_args),
-                positionwise_layer(
-                    *positionwise_layer_args) if macaron_style else None,
+                positionwise_layer(*positionwise_layer_args) if macaron_style else None,
                 convolution_layer(
                     *convolution_layer_args) if use_cnn_module else None,
                 dropout_rate,
                 normalize_before,
-                concat_after,
             ) for _ in range(num_blocks)
         ])
-
