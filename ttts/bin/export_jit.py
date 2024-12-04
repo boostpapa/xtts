@@ -84,14 +84,20 @@ class TTSModel(torch.nn.Module):
                                             model_var_type='learned_range', loss_type='mse',
                                             betas=get_named_beta_schedule('linear', 1000),
                                             conditioning_free=True, ramp_conditioning_free=False, conditioning_free_k=2., sampler='dpm++2m')
+
+
         self.codes_time = 0
         self.latent_time = 0
         self.vocos_time = 0
 
-    def reset_time():
+    def reset_time(self,):
         self.codes_time = 0
         self.latent_time = 0
         self.vocos_time = 0
+        self.vocoder_time = 0
+
+    def statistics_info(self,):
+        print(f">> codes_time: {self.codes_time}, latent_time: {self.latent_time}, vocoder_time: {self.vocoder_time}.")
 
     def infer(self, cond_mel: torch.Tensor,
                 text_tokens: torch.IntTensor, text_lens: torch.IntTensor):
@@ -154,7 +160,8 @@ class TTSModel(torch.nn.Module):
         code_lens = torch.LongTensor(code_lens).cuda()
         print(f"code len: {code_lens}")
 
-        with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+        #with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+        with torch.amp.autocast('cuda', enabled=self.dtype is not None, dtype=self.dtype):
             start_time = time.time()
             #latent = self.gpt(cond_mel,
             latent, text_lens_out, code_lens_out \
@@ -334,7 +341,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/41850dd04f3fe8
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/split2_J5_TTS_女性_愤怒_4.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/hanser_zh.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sunwukong.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
 cond_audio = '/audionas/users/xuanwu/tts/data/bilibili/pgc/xialei/process/flac_cut/xialei3_262.flac'
 cond_audio = '/audionas/users/xuanwu/tts/data/bilibili/pgc/xialei/process/flac_cut/xialei3_19.flac'
 cond_audio = '/speechfs01/users/wd007/tts/src/bilibili/bilibili_tts/zero-shot-test/chenrui.wav'
@@ -353,8 +359,9 @@ cond_audio = '/speechfs01/users/siyi/data/DaiMeng/speak/ZH/wav/002741.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xueli.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/funingna.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/pangbai_48000_dfn.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/funingna.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
 
 text = "是谁给你的胆量这么跟我说话，嗯? 是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
 text = "历史将永远记住同志们的杰出创造和奉献，党和人民感谢你们。"
@@ -472,9 +479,6 @@ def test():
     model.eval()
     model.cuda()
 
-    if args.fp16:
-        model.half()
-
     cfg = OmegaConf.load(args.config)
 
     print(f"cond_audio: ", cond_audio)
@@ -497,7 +501,7 @@ def test():
     #sentences = ['成对或结群活动，食物几乎完全是植物，', '各种水生植物和藻类。具有较强游牧性，', '迁移模式不规律，主要取决于气候条件，', '迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，', '有时也是居住地筑巢。 当食物稀少']
     #sentences = ['成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，', '主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种', '有时也是居住地筑巢。 当食物稀少']
     #sentences = ['顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。']
-    sentences = ['我终是看到了，生在这一世，需要一个人独断万古啊！', '若有一天星空炸裂，乾坤倾覆，无数故人红颜白发，魂归黄土，消失在岁月之中，', '而你虽世间无敌，却只能独自站在岁月长河上，回首万古，独伴大道，又会怎样呢.']
+    #sentences = ['我终是看到了，生在这一世，需要一个人独断万古啊！', '若有一天星空炸裂，乾坤倾覆，无数故人红颜白发，魂归黄土，消失在岁月之中，', '而你虽世间无敌，却只能独自站在岁月长河上，回首万古，独伴大道，又会怎样呢.']
     print(sentences)
 
     sens_tokens = []
@@ -641,7 +645,7 @@ def main():
         all_wavs.append(wav)
     wav = torch.cat(all_wavs, dim=1)
     torchaudio.save(f"{args.outdir}/all.wav", wav.type(torch.int16), 24000)
-    model.statistics_info()
+    #model.statistics_info()
 
 
 if __name__ == '__main__':
