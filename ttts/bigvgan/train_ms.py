@@ -68,7 +68,7 @@ class Trainer(object):
         self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader,
                                           collate_fn=BigVGANCollator())
 
-        self.train_steps = self.cfg.train['train_steps']
+        #self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
         self.save_interval = self.cfg.train['save_interval'] if 'save_interval' in self.cfg.train else None
         self.log_interval = self.cfg.train['log_interval']
@@ -265,8 +265,9 @@ class Trainer(object):
             '''
 
         segment_size = self.cfg.bigvgan.segment_size  # 11264 # 8192 # 24576
-        hop_length = self.cfg.bigvgan.gpt_dim
-        chunk = segment_size // hop_length
+        #hop_length = self.cfg.bigvgan.gpt_dim
+        hop_length = 1024
+        chunk = segment_size // 1024
 
         for epoch in range(self.start_epoch, self.num_epochs):
             for i, batch in enumerate(self.train_dataloader):
