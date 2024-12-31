@@ -20,13 +20,23 @@ from ttts.utils.utils import AttrDict, load_audio, get_prompt_slice, get_logger
 
 class GptTTSDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
+        self.use_spm = False
+        self.use_bbpe = False
+        self.use_bpe = False
         if 'gpt_vocab' in cfg.dataset:
             self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
-            self.use_spm = False
+        elif 'bbpe_model' in cfg.dataset:
+            self.tokenizer = spm.SentencePieceProcessor()
+            self.tokenizer.load(cfg.dataset['bbpe_model'])
+            self.use_bbpe = True
+            self.use_spm = True
         else:
             self.tokenizer = spm.SentencePieceProcessor()
             self.tokenizer.load(cfg.dataset['bpe_model'])
+            self.use_bpe = True
             self.use_spm = True
+            self.char_ratio = cfg.dataset['char_ratio'] if 'char_ratio' in cfg.dataset else 0.5
+            self.pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
         
         self.prompt = cfg.dataset['prompt'] if 'prompt' in cfg.dataset else "random"
         print(f"Warning: get prompt wav in {self.prompt}")
@@ -51,7 +61,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
         random.shuffle(self.datalist)
         print(f"Warning: datalist random shuffled")
         '''
-        for i in range(0, 3):
+        for i in range(0, 2):
             print(self.datalist[i])
 
         self.squeeze = cfg.dataset['squeeze']
@@ -66,7 +76,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             #key, wav_path, spkid, language, raw_text, cleand_text
             # key, wav_path, spkid, language, raw_text
             strs = line.strip().split("|")
-            if (self.use_spm and len(strs) < 5) or (not self.use_spm and len(strs) < 6):
+            if (self.use_bbpe and len(strs) < 5) or (not self.use_bbpe and len(strs) < 6):
                 return None
 
             if not self.use_spm:
@@ -78,7 +88,20 @@ class GptTTSDataset(torch.utils.data.Dataset):
                 cleand_text = tokenize_by_CJK_char(cleand_text)
                 # cleand_text = f"[{strs[3]}] {cleand_text}"
                 #cleand_text = cleand_text.replace(' ', '[SPACE]')
-                cleand_text = byte_encode(cleand_text)
+                if self.use_bbpe:
+                    cleand_text = byte_encode(cleand_text)
+                elif self.use_bpe:
+                    if random.random() > self.char_ratio:
+                        chars = cleand_text.split()
+                        pinyins = tokenize_by_CJK_char(strs[5]).split()
+                        if len(chars) == len(pinyins):
+                            n = len(chars)
+                            num_to_py = int(n * self.pinyin_ratio_sen)
+                            indices = random.sample(range(n), num_to_py)
+                            for idx in indices:
+                                chars[idx] = pinyins[idx]
+                            cleand_text = " ".join(chars)
+
             # print(f"cleand_text: {cleand_text}")
             seqid = self.tokenizer.encode(cleand_text)
             #print(f"seqid: {seqid}")
