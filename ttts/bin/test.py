@@ -1,6 +1,7 @@
 from pypinyin import lazy_pinyin, Style
 import torch
 import re
+import random
 import numpy as np
 from omegaconf import OmegaConf
 from ttts.gpt.model import UnifiedVoice
@@ -165,13 +166,25 @@ import sentencepiece as spm
 from ttts.utils.byte_utils import byte_encode
 from ttts.utils.utils import tokenize_by_CJK_char
 import torch.nn.functional as F
+
+use_spm = False
+use_bbpe = False
+use_bpe = False
+
 if 'gpt_vocab' in cfg.dataset:
     tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
-    use_spm = False
+elif 'bbpe_model' in cfg.dataset:
+    tokenizer = spm.SentencePieceProcessor()
+    tokenizer.load(cfg.dataset['bbpe_model'])
+    use_bbpe = True
+    use_spm = True
 else:
     tokenizer = spm.SentencePieceProcessor()
     tokenizer.load(cfg.dataset['bpe_model'])
+    use_bpe = True
     use_spm = True
+    char_ratio = cfg.dataset['char_ratio'] if 'char_ratio' in cfg.dataset else 0.5
+    pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
 
 diffusion_path = cfg.diffusion_checkpoint
 diffusion = load_model('diffusion', diffusion_path, config, device)
@@ -306,7 +319,22 @@ for sent in sentences:
         #cleand_text = f"[{lang}] {cleand_text}"
         #cleand_text = cleand_text.replace(' ', '[SPACE]')
         print(cleand_text)
-        cleand_text = byte_encode(cleand_text)
+        if use_bbpe:
+            cleand_text = byte_encode(cleand_text)
+        elif use_bpe:
+            chars = cleand_text.split()
+            norm_text, words = clean_text1(sent, lang)
+            pinyins = ' '.join(words)
+            print(pinyins)
+            pinyins = tokenize_by_CJK_char(pinyins).split()
+            if len(chars) == len(pinyins):
+                n = len(chars)
+                num_to_py = int(n * 0.2)
+                indices = random.sample(range(n), num_to_py)
+                for idx in indices:
+                    chars[idx] = pinyins[idx]
+                cleand_text = " ".join(chars)
+            print(cleand_text)
         
     print(cleand_text)
     text_tokens = torch.IntTensor(tokenizer.encode(cleand_text)).unsqueeze(0).to(device)
