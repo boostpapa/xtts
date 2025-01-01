@@ -164,8 +164,10 @@ class SimQuantize(nn.Module):
         z_q = F.embedding(min_encoding_indices, quant_codebook)
 
         # compute loss for embedding
-        commit_loss = self.beta * torch.mean((z_q.detach() - z) ** 2) + \
-            torch.mean((z_q - z.detach()) ** 2)
+        #commit_loss = self.beta * torch.mean((z_q.detach() - z) ** 2) + \
+        #    torch.mean((z_q - z.detach()) ** 2)
+        commit_loss = torch.mean((z_q.detach()-z)**2) + self.beta * \
+             torch.mean((z_q - z.detach()) ** 2)
 
         # preserve gradients
         z_q = z + (z_q - z).detach()

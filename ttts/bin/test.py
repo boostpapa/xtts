@@ -37,10 +37,11 @@ import torchaudio
 
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s5_v2/exp/baseline_udit/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s4_v3/exp/baseline_unet/config.yaml'
-config='/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/exp/baseline_sft/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_bpe_v2/exp/baseline_udit/config.yaml'
-config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/exp/baseline_mrte1_nolangid_bf16_2/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s4_v2/exp/baseline_unet_rd/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/exp/baseline_sft/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/exp/baseline_mrte1_nolangid_bf16_2/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/exp/baseline_mrte1_nolangid_bf16_2/config.yaml'
 
 cfg = OmegaConf.load(config)
 
@@ -135,6 +136,10 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_en1.w
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/qingnian_angry.mp3'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/wubinbin.mp3'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/tunshixinkong1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
+cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000228.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yctf.wav'
 
 audio,sr = torchaudio.load(cond_audio)
 if audio.shape[0]>1:
@@ -244,6 +249,8 @@ text = "瓶子倒了，水倒了出来, 大都市的人口都很多, 汤匙、�
 text = "把我的脚放在他们脚下，求他们踩，求他们原谅吗？难道真的要这样吗？你是真的不可理喻，真的不可理喻！森琦老师，我是真的不懂，为什么这么难的需求要找到我！你真的觉得这个需求我能搞得定吗？别那么异想天开了好不好！好不好！"
 text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, Open-Sora not only democratizes access to advanced video generation techniques, but also offers a streamlined and user-friendly platform that simplifies the complexities of video production. With Open-Sora, we aim to inspire innovation, creativity, and inclusivity in the realm of content creation."
 text = "What time do you usually go to bed? 我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
+text = "幽暗深邃的轮回通道内。“终于看到尽头了。”星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。“主人，我们终于抵达起源大陆了。”界兽摩罗撒也很兴奋。“嗯，终于来了。”罗峰也露出笑容。"
+text = "真正的危险不是计算机开始像人一样思考，而是人开始像计算机一样思考。计算机只是可以帮我们处理一些简单事务。"
 
 '''
 pinyin = ' '.join(lazy_pinyin(text, style=Style.TONE3, neutral_tone_with_five=True))

@@ -84,16 +84,11 @@ class TTSModel(torch.nn.Module):
                                             model_var_type='learned_range', loss_type='mse',
                                             betas=get_named_beta_schedule('linear', 1000),
                                             conditioning_free=True, ramp_conditioning_free=False, conditioning_free_k=2., sampler='dpm++2m')
-
-
-        self.codes_time = 0
-        self.latent_time = 0
-        self.vocos_time = 0
+        self.reset_time()
 
     def reset_time(self,):
         self.codes_time = 0
         self.latent_time = 0
-        self.vocos_time = 0
         self.vocoder_time = 0
 
     def statistics_info(self,):
@@ -182,12 +177,14 @@ class TTSModel(torch.nn.Module):
             print(f"latent shape: {latent.shape}")
 
             print(f"cond_mel shape: {cond_mel.shape}")
+            start_time = time.time()
             if self.vocoder == "bigvgan":
                 #print(self.bigvgan)
                 wav, _ = self.bigvgan(latent, cond_mel.transpose(1,2))
                 wav = wav.squeeze(1)
                 #wav = 32767 / max(0.01, torch.max(torch.abs(wav))) * 1.0 * wav.detach()
                 wav = 32767 * wav
+                self.vocoder_time += (time.time()-start_time)
             else:
                 diffusion_conditioning = normalize_tacotron_mel(cond_mel)
                 upstride = self.gpt.mel_length_compression / 256
@@ -550,6 +547,7 @@ def test():
         mels.append(mel)
         #cond_mel = torch.cat([cond_mel1[...,-700:], mel[...,-300:]], -1)
         print(f"cond_mel shape: {cond_mel.shape}")
+    model.statistics_info()
         
         
     #mel = torch.cat(mels, -1)
