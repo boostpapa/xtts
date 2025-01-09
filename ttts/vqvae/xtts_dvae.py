@@ -70,6 +70,7 @@ class Quantize(nn.Module):
         self.register_buffer("embed_avg", embed.clone())
 
     def forward(self, input, return_soft_codes=False):
+        input = input.permute((0, 2, 3, 1) if len(input.shape) == 4 else (0, 2, 1))
         if self.balancing_heuristic and self.codes_full:
             h = torch.histc(self.codes, bins=self.n_embed, min=0, max=self.n_embed) / len(self.codes)
             mask = torch.logical_or(h > 0.9, h < 0.01).unsqueeze(1)
@@ -119,6 +120,7 @@ class Quantize(nn.Module):
         diff = (quantize.detach() - input).pow(2).mean()
         quantize = input + (quantize - input).detach()
 
+        quantize = quantize.permute((0, 3, 1, 2) if len(input.shape) == 4 else (0, 2, 1))
         if return_soft_codes:
             return quantize, diff, embed_ind, soft_codes.view(input.shape[:-1] + (-1,))
         elif self.new_return_order:
@@ -147,6 +149,7 @@ class SimQuantize(nn.Module):
         self.embedding_proj = nn.Linear(self.dim, self.dim)
 
     def forward(self, z, return_soft_codes=False):
+        z = z.permute((0, 2, 3, 1) if len(z.shape) == 4 else (0, 2, 1))
         z_flattened = z.reshape(-1, self.dim)
         quant_codebook = self.embedding_proj(self.embedding.weight)
 
@@ -172,6 +175,7 @@ class SimQuantize(nn.Module):
         # preserve gradients
         z_q = z + (z_q - z).detach()
 
+        z_q = z_q.permute((0, 3, 1, 2) if len(z.shape) == 4 else (0, 2, 1))
         if return_soft_codes:
             return z_q, commit_loss, min_encoding_indices, soft_codes.view(z.shape[:-1] + (-1,))
         elif self.new_return_order:
@@ -273,7 +277,7 @@ class DiscreteVAE(nn.Module):
         straight_through=False,
         normalization=None,  # ((0.5,) * 3, (0.5,) * 3),
         record_codes=False,
-        use_simvq=False,
+        quantizer="origin",
         discretization_loss_averaging_steps=100,
         lr_quantizer_args={},
     ):
@@ -350,10 +354,14 @@ class DiscreteVAE(nn.Module):
         self.loss_fn = F.smooth_l1_loss if smooth_l1_loss else F.mse_loss
         self.ssim_loss_weight = ssim_loss_weight
         self.loss_ssim = SSIM(size_average=True, nonnegative_ssim=False) if ssim_loss_weight > 0 else None
-        if use_simvq:
-            self.codebook = SimQuantize(codebook_dim, num_tokens, new_return_order=True)
-        else:
+        self.quantizer = quantizer
+        if quantizer == "origin":
             self.codebook = Quantize(codebook_dim, num_tokens, new_return_order=True)
+        elif quantizer == "simvq":
+            self.codebook = SimQuantize(codebook_dim, num_tokens, new_return_order=True)
+        elif quantizer == "fsq":
+            from ttts.vqvae.quantizers import FSQ
+            self.quantize_t = FSQ(levels=args.levels)
 
         # take care of normalization within class
         self.normalization = normalization
@@ -388,11 +396,11 @@ class DiscreteVAE(nn.Module):
         img = self.norm(images)
         logits = self.encoder(img).permute((0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
         sampled, codes, _ = self.codebook(logits)
-        self.log_codes(codes)
+        # self.log_codes(codes)
         return codes
 
     def decode(self, img_seq):
-        self.log_codes(img_seq)
+        # self.log_codes(img_seq)
         if hasattr(self.codebook, "embed_code"):
             image_embeds = self.codebook.embed_code(img_seq)
         else:
@@ -412,29 +420,40 @@ class DiscreteVAE(nn.Module):
             images.append(layer(images[-1]))
         return images[-1], images[-2]
 
+    def decode_indices(self, indices):
+        if hasattr(self.codebook, "embed_code"):
+            out = self.codebook.embed_code(indices)
+        else:
+            out = self.codebook.indices_to_codes(indices)
+
+        dec = self.decoder(out)
+        return dec
+
     def infer(self, img):
         img = self.norm(img)
-        logits = self.encoder(img).permute((0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
+        logits = self.encoder(img)
         sampled, codes, commitment_loss = self.codebook(logits)
-        return self.decode(codes)
+        return self.decode_indices(codes)
 
     # Note: This module is not meant to be run in forward() except while training. It has special logic which performs
     # evaluation using quantized values when it detects that it is being run in eval() mode, which will be substantially
     # more lossy (but useful for determining network performance).
     def forward(self, img):
         img = self.norm(img)
-        logits = self.encoder(img).permute((0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
+        logits = self.encoder(img)
         sampled, codes, commitment_loss = self.codebook(logits)
-        sampled = sampled.permute((0, 3, 1, 2) if len(img.shape) == 4 else (0, 2, 1))
+        out = self.decoder(sampled)
 
+        '''
         if self.training:
             out = sampled
             for d in self.decoder:
                 out = d(out)
-            self.log_codes(codes)
+            # self.log_codes(codes)
         else:
             # This is non-differentiable, but gives a better idea of how the network is actually performing.
             out, _ = self.decode(codes)
+        '''
 
         # reconstruction loss
         out = out[..., :img.shape[-1]]

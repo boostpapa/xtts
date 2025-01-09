@@ -15,7 +15,6 @@ from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 
 
-
 class BigVGANDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
         if 'gpt_vocab' in cfg.dataset:
