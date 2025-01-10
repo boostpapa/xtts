@@ -142,6 +142,7 @@ class FSQ(Module):
         c - number of codebook dim
         """
 
+        z = z.permute((0, 2, 3, 1) if len(z.shape) == 4 else (0, 2, 1))
         is_img_or_video = z.ndim >= 4
 
         # standardize image or video into (batch, seq, dimension)
@@ -174,6 +175,7 @@ class FSQ(Module):
         if not self.keep_num_codebooks_dim:
             indices = rearrange(indices, '... 1 -> ...')
 
+        out = out.permute((0, 3, 1, 2) if len(out.shape) == 4 else (0, 2, 1))
         diff = torch.tensor(0.0).cuda().float()
         return out, indices, diff
 

@@ -362,7 +362,7 @@ class DiscreteVAE(nn.Module):
             self.codebook = SimQuantize(codebook_dim, num_tokens, new_return_order=True)
         elif quantizer == "fsq":
             from ttts.vqvae.quantizers import FSQ
-            self.quantize_t = FSQ(levels=quantizer_args['levels'])
+            self.codebook = FSQ(levels=quantizer_args['levels'])
 
         # take care of normalization within class
         self.normalization = normalization
