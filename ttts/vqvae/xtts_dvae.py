@@ -70,7 +70,6 @@ class Quantize(nn.Module):
         self.register_buffer("embed_avg", embed.clone())
 
     def forward(self, input, return_soft_codes=False):
-        input = input.permute((0, 2, 3, 1) if len(input.shape) == 4 else (0, 2, 1))
         if self.balancing_heuristic and self.codes_full:
             h = torch.histc(self.codes, bins=self.n_embed, min=0, max=self.n_embed) / len(self.codes)
             mask = torch.logical_or(h > 0.9, h < 0.01).unsqueeze(1)
@@ -120,7 +119,6 @@ class Quantize(nn.Module):
         diff = (quantize.detach() - input).pow(2).mean()
         quantize = input + (quantize - input).detach()
 
-        quantize = quantize.permute((0, 3, 1, 2) if len(input.shape) == 4 else (0, 2, 1))
         if return_soft_codes:
             return quantize, diff, embed_ind, soft_codes.view(input.shape[:-1] + (-1,))
         elif self.new_return_order:
@@ -149,7 +147,6 @@ class SimQuantize(nn.Module):
         self.embedding_proj = nn.Linear(self.dim, self.dim)
 
     def forward(self, z, return_soft_codes=False):
-        z = z.permute((0, 2, 3, 1) if len(z.shape) == 4 else (0, 2, 1))
         z_flattened = z.reshape(-1, self.dim)
         quant_codebook = self.embedding_proj(self.embedding.weight)
 
@@ -175,7 +172,6 @@ class SimQuantize(nn.Module):
         # preserve gradients
         z_q = z + (z_q - z).detach()
 
-        z_q = z_q.permute((0, 3, 1, 2) if len(z.shape) == 4 else (0, 2, 1))
         if return_soft_codes:
             return z_q, commit_loss, min_encoding_indices, soft_codes.view(z.shape[:-1] + (-1,))
         elif self.new_return_order:
@@ -432,7 +428,7 @@ class DiscreteVAE(nn.Module):
 
     def infer(self, img):
         img = self.norm(img)
-        logits = self.encoder(img)
+        logits = self.encoder(img).permute((0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
         sampled, codes, commitment_loss = self.codebook(logits)
         return self.decode_indices(codes)
 
@@ -441,8 +437,9 @@ class DiscreteVAE(nn.Module):
     # more lossy (but useful for determining network performance).
     def forward(self, img):
         img = self.norm(img)
-        logits = self.encoder(img)
+        logits = self.encoder(img).permute((0, 2, 3, 1) if len(img.shape) == 4 else (0, 2, 1))
         sampled, codes, commitment_loss = self.codebook(logits)
+        sampled = sampled.permute((0, 3, 1, 2) if len(img.shape) == 4 else (0, 2, 1))
         out = self.decoder(sampled)
 
         '''
