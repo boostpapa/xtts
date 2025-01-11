@@ -25,6 +25,7 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         self.pad_to = cfg['dataset']['pad_to_samples']
         self.squeeze = cfg['dataset']['squeeze']
         self.sample_rate = cfg['dataset']['sample_rate']
+        self.num_chunk = cfg['dataset']['num_chunk'] if 'num_chunk' in cfg['dataset'] else 1
         if 'mel_type' in cfg['dataset'] and cfg['dataset']['mel_type'] == "librosa":
             self.mel_extractor = MelSpectrogramFeatures1(**cfg['dataset']['mel'])
         else:
@@ -45,6 +46,28 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
             mel = self.mel_extractor(wav)
             #print(f"mel shape: {mel.shape}")
 
+            mel_len = mel.shape[-1]
+            num_chunk = self.num_chunk
+            if mel_len/num_chunk >= self.pad_to:
+                chunk_len = mel_len/num_chunk
+            else:
+                num_chunk = mel_len/self.pad_to
+                chunk_len = mel_len/num_chunk
+
+            mels = []
+            for i in range(0, num_chunk):
+                mel_chunk = mel[:, :, i*chunk_len:(i+1)*chunk_len]
+                if chunk_len >= self.pad_to:
+                    start = torch.randint(0, chunk_len - self.pad_to + 1, (1,))
+                    mel_sample = mel_chunk[:, :, start:start + self.pad_to]
+                else:
+                    padding_needed = self.pad_to - chunk_len
+                    mel_sample = F.pad(mel_chunk, (0, padding_needed))
+                if self.squeeze:
+                    mel_sample = mel_sample.squeeze()
+                mels.append(mel_sample)
+
+            '''
             if mel.shape[-1] >= self.pad_to:
                 start = torch.randint(0, mel.shape[-1] - self.pad_to+1, (1,))
                 mel = mel[:, :, start:start+self.pad_to]
@@ -57,10 +80,11 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
             assert mel.shape[-1] == self.pad_to
             if self.squeeze:
                 mel = mel.squeeze()
+            '''
         except:
             print(f"Warning: {wav_path} processing error, skip!")
             return None
-        return mel
+        return mels
 
     def __len__(self):
         return len(self.datalist)
@@ -71,10 +95,16 @@ class MelCollator:
         self.cfg = cfg
 
     def __call__(self, batch):
-        batch = [x for x in batch if x is not None]
-        if len(batch) == 0:
+        #batch = [x for x in batch if x is not None]
+        samples = []
+        for x in batch:
+            if x is not None:
+                for t in x:
+                    samples.append(t)
+
+        if len(samples) == 0:
             return None
-        mels = torch.stack(batch)
+        mels = torch.stack(samples)
         return mels
 
 
