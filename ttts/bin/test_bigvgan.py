@@ -2,6 +2,7 @@ from pypinyin import lazy_pinyin, Style
 import torch
 import torchaudio
 import re
+import random
 import json
 import numpy as np
 from omegaconf import OmegaConf
@@ -24,6 +25,9 @@ config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/exp/baseline_mrte1_nol
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s4_v2/exp/baseline_unet_rd/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_bigvgan_pytorch/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_bigvgan_pytorch_newgpt/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/gpt/s2_bpe_v2/exp/baseline_bpemix_ds/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/gpt/baseline_mix_2409/exp/baseline_bpemix_space_ds/config.yaml'
 
 cfg = OmegaConf.load(config)
 
@@ -128,11 +132,11 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
 cond_audio = '/speechwork/users/wd007/tts/yourtts/mix_cn/prompt/chenrui/chenrui2.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luoxiang1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/ugctest/prompt/NvHai.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000228.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luofeng.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/tunshixinkong1.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 
 audio,sr = torchaudio.load(cond_audio)
 if audio.shape[0]>1:
@@ -152,13 +156,24 @@ import sentencepiece as spm
 from ttts.utils.byte_utils import byte_encode
 from ttts.utils.utils import tokenize_by_CJK_char
 import torch.nn.functional as F
+use_spm = False
+use_bbpe = False
+use_bpe = False
+
 if 'gpt_vocab' in cfg.dataset:
     tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
-    use_spm = False
+elif 'bbpe_model' in cfg.dataset:
+    tokenizer = spm.SentencePieceProcessor()
+    tokenizer.load(cfg.dataset['bbpe_model'])
+    use_bbpe = True
+    use_spm = True
 else:
     tokenizer = spm.SentencePieceProcessor()
     tokenizer.load(cfg.dataset['bpe_model'])
+    use_bpe = True
     use_spm = True
+    char_ratio = cfg.dataset['char_ratio'] if 'char_ratio' in cfg.dataset else 0.5 
+    pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2 
 
 
 text = "历史将永远记住同志们的杰出创造和奉献，党和人民感谢你们。"
@@ -202,7 +217,6 @@ text = "先帝创业未半而中道崩殂，今天下三分，益州疲弊，此
 text = "斯塔西亚，不要睡，睁开眼睛。你不是一直想回到洛伦去吗？洛伦啊，你的故乡，那里有海，有草原，有脆脆绵绵的朝夕果……你在听吗，呜呜……斯塔西亚，求你……睁开眼睛看看。"
 text = '你家主子早点滚蛋才叫消停，大家也就都能过上太平日子了。举手之劳罢了。七爷他一向可好？怎么好劳烦七爷和大巫呢？这中原武林已经够乱乎的了，那祸害竟然还要来掺和一脚，真是流年不利，天灾人祸赶齐全了。戏言，戏言罢了…蜀中沈家的家主沈慎？难不成，传说中的五块琉璃甲，竟在当年的五大家族手上？'
 text = "好耶!天依会一直为你加油的! 在不断努力和尝试的过程中，你一定也会容易遇到困难，会感到沮丧，会想要气馁，但不要放弃，没有任何一件事情的完成是简单的."
-text = "once upon a time, there lived in a certain village. a little country girl, the prettiest creature who was ever seen. her mother was accessibly fond of her and her grandmother doted on her still more."
 text = "1、先把五花肉切成带皮的比较小的一块一块的肉块。2、锅里放油，热后放入白糖，炒到起泡为止，倒入切好的肉，辅料，大火爆炒1分钟。3、按个人口味加入适量调料：咸盐，鸡精，料酒，陈醋，老抽.最后加水淹没肉大火煮沸。"
 text = "庆历四年春，滕子京谪守巴陵郡。越明年，政通人和，百废具兴，乃重修岳阳楼，增其旧制，刻唐贤今人诗赋于其上，属予作文以记之。予观夫巴陵胜状，在洞庭一湖。衔远山，吞长江，浩浩汤汤，横无际涯，朝晖夕阴，气象万千，此则岳阳楼之大观也，前人之述备矣。然则北通巫峡，南极潇湘，迁客骚人，多会于此，览物之情，得无异乎？"
 text = "但会四处游牧。 在黄昏时分进食，夜间飞行，在飞行时呼叫，但大部分活动都在白天进行。"
@@ -231,6 +245,11 @@ text = "幽暗深邃的轮回通道内。“终于看到尽头了。”星辰塔
 text = "星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。"
 text = "断东河一脉的三大传承之一《不死河》，如果练成，即可凭借一滴血再度复活。罗峰和界兽摩罗撒都是完美神体，达到十万倍生命层次，他们的生命拥有诸多匪夷所思之处，他们能隔绝生命气息，令气息锁定无效。能模糊天机，甚至能千变万化，毫无破绽。无需修炼《不死河》，他们的一根头发、一滴血，都能够借此再度重生。"
 text = "天之道，有所得，必有所失，现实就是这样的，有所得必定会有所失。是啊，妖，变成妖你们就能在一起了。要离开修罗城，你给得了我想要的吗？我们宝青坊，妖怪法宝的锻造工坊。"
+text = "once upon a time, there lived in a certain village. a little country girl, the prettiest creature who was ever seen. her mother was accessibly fond of her and her grandmother doted on her still more."
+text = "黑化肥发灰，灰化肥发黑，黑化肥挥发会发黑，灰化肥挥发会发灰。化肥会挥发，灰化肥挥发发黑会挥发，黑化肥挥发发灰会挥发。"
+text = "我等不及等不及等不及等不及等不及去去去去去玩水，我站站站站站在沙上沙上沙上沙上沙上的时候，脚快脚快脚快脚快脚快烧起来了。"
+text = "人要是行，干一行行一行，一行行行行行，行行行干哪行都行；要是不行，干一行不行一行，一行不行行行不行，行行不行干哪行都不行。"
+text = "他那像哄小孩似的话，引得人们哄堂大笑，大家听了一哄而散。"
 
 
 
@@ -289,19 +308,43 @@ for sent in sentences:
         #cleand_text = f"[{lang}] {cleand_text}"
         #cleand_text = cleand_text.replace(' ', '[SPACE]')
         print(cleand_text)
-        cleand_text = byte_encode(cleand_text)
+        if use_bbpe:
+            cleand_text = byte_encode(cleand_text)
+        elif use_bpe:
+            chars = cleand_text.split()
+            norm_text, words = clean_text1(sent, lang)
+            pinyins = ' '.join(words)
+            print(pinyins)
+        '''
+            pinyins = tokenize_by_CJK_char(pinyins).split()
+            if len(chars) == len(pinyins):
+                n = len(chars)
+                num_to_py = int(n * 0.2)
+                indices = random.sample(range(n), num_to_py)
+                for idx in indices:
+                    chars[idx] = pinyins[idx]
+                cleand_text = " ".join(chars)
+        '''
         
+    #cleand_text = "他 那 像 HONG3 小 孩 似 的 话 , 引 得 人 们 HONG1 堂 大 笑 , 大 家 听 了 一 HONG3 而 散 ."
     print(cleand_text)
     text_tokens = torch.IntTensor(tokenizer.encode(cleand_text)).unsqueeze(0).to(device)
+    
     #text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
-    text_tokens = F.pad(text_tokens, (1,0), value=0)
-    text_tokens = F.pad(text_tokens, (0,1), value=1)
+    #text_tokens = F.pad(text_tokens, (1,0), value=0)
+    #text_tokens = F.pad(text_tokens, (0,1), value=1)
     text_tokens = text_tokens.to(device)
     print(text_tokens)
     print(f"text_tokens shape: {text_tokens.shape}")
+    text_token_syms = [tokenizer.IdToPiece(idx) for idx in text_tokens[0].tolist()]
+    print(text_token_syms)
+    text_len = [text_tokens.size(1)]
+    text_len = torch.IntTensor(text_len).to(device)
+    print(text_len)
     with torch.no_grad():
         codes = gpt.inference_speech(auto_conditioning, text_tokens,
                                 cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
+                                text_lengths=text_len,
                                 do_sample=True,
                                 top_p=top_p,
                                 top_k=top_k,

@@ -17,13 +17,24 @@ from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
 
 class BigVGANDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, datafile, is_eval=False):
+        self.use_spm = False
+        self.use_bbpe = False
+        self.use_bpe = False
         if 'gpt_vocab' in cfg.dataset:
             self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
-            self.use_spm = False
+        elif 'bbpe_model' in cfg.dataset:
+            self.tokenizer = spm.SentencePieceProcessor()
+            self.tokenizer.load(cfg.dataset['bbpe_model'])
+            self.use_bbpe = True
+            self.use_spm = True
         else:
             self.tokenizer = spm.SentencePieceProcessor()
             self.tokenizer.load(cfg.dataset['bpe_model'])
+            self.use_bpe = True
             self.use_spm = True
+            self.char_ratio = cfg.dataset['char_ratio'] if 'char_ratio' in cfg.dataset else 0.5
+            self.pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
+        print(f"Using spm {self.use_spm}, bbpe {self.use_bbpe}, bpe {self.use_bpe} tokenizer.")
 
         self.datalist = []
         with open(datafile, 'r', encoding='utf8') as fin:
@@ -36,6 +47,7 @@ class BigVGANDataset(torch.utils.data.Dataset):
 
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
+        self.max_dur = cfg.dataset['max_dur']*100 if 'max_dur' in cfg.dataset else 2400
         self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
         self.is_eval = is_eval
 
@@ -44,6 +56,7 @@ class BigVGANDataset(torch.utils.data.Dataset):
             line = self.datalist[index]
             strs = line.strip().split("|")
 
+            lang = strs[3]
             if not self.use_spm:
                 cleand_text = strs[5]
                 # [language] + cleand_text
@@ -53,7 +66,20 @@ class BigVGANDataset(torch.utils.data.Dataset):
                 cleand_text = tokenize_by_CJK_char(cleand_text)
                 # cleand_text = f"[{strs[3]}] {cleand_text}"
                 #cleand_text = cleand_text.replace(' ', '[SPACE]')
-                cleand_text = byte_encode(cleand_text)
+                if self.use_bbpe:
+                    cleand_text = byte_encode(cleand_text)
+                elif self.use_bpe:
+                    if lang == "ZH" and random.random() > self.char_ratio:
+                        chars = cleand_text.split()
+                        pinyins = tokenize_by_CJK_char(strs[5]).split()
+                        if len(chars) == len(pinyins):
+                            n = len(chars)
+                            num_to_py = int(n * self.pinyin_ratio_sen)
+                            indices = random.sample(range(n), num_to_py)
+                            for idx in indices:
+                                chars[idx] = pinyins[idx]
+                            cleand_text = " ".join(chars)
+
             # print(f"cleand_text: {cleand_text}")
             seqid = self.tokenizer.encode(cleand_text)
             # print(f"seqid: {seqid}")
@@ -92,8 +118,8 @@ class BigVGANDataset(torch.utils.data.Dataset):
             print(f"Warning: {wav_path} processing error, skip!")
             return None
 
-        if text_tokens.shape[0] > 300 or mel_refer.shape[1] > 1200:
-            print(f"Warning: {wav_path} text len {text_tokens.shape[0]} exceed 300 or raw mel len {mel_refer.shape[1]*2} exceed 2400.")
+        if text_tokens.shape[0] > 400 or mel_refer.shape[1] > self.max_dur/2:
+            print(f"Warning: {wav_path} text len {text_tokens.shape[0]} exceed 400 or raw mel len {mel_refer.shape[1]*2} exceed {self.max_dur}.")
             return None
 
         return text_tokens, mel_refer, mel_infer, wav_infer, wav_refer
