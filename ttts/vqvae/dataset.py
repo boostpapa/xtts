@@ -33,7 +33,7 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
         self.is_eval = is_eval
 
     def __getitem__(self, index):
-        try:
+        #try:
             line = self.datalist[index]
             strs = line.strip().split("|")
             wav_path = line if len(strs) == 1 else strs[1]
@@ -49,10 +49,12 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
             mel_len = mel.shape[-1]
             num_chunk = self.num_chunk
             if mel_len/num_chunk >= self.pad_to:
-                chunk_len = mel_len/num_chunk
+                chunk_len = mel_len//num_chunk
             else:
-                num_chunk = mel_len/self.pad_to
-                chunk_len = mel_len/num_chunk
+                num_chunk = mel_len//self.pad_to
+                if num_chunk == 0:
+                    num_chunk = 1
+                chunk_len = mel_len//num_chunk
 
             mels = []
             for i in range(0, num_chunk):
@@ -81,10 +83,10 @@ class PreprocessedMelDataset(torch.utils.data.Dataset):
             if self.squeeze:
                 mel = mel.squeeze()
             '''
-        except:
-            print(f"Warning: {wav_path} processing error, skip!")
-            return None
-        return mels
+        #except:
+        #    print(f"Warning: {wav_path} processing error, skip!")
+        #    return None
+            return mels
 
     def __len__(self):
         return len(self.datalist)
