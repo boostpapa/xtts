@@ -100,6 +100,7 @@ class TTSModel(torch.nn.Module):
         cond_mel_lengths = torch.tensor([cond_mel.shape[-1]]*batch_size, device=text_tokens.device)
         print(cond_mel_lengths)
         print(text_tokens)
+        print(text_lens)
 
         start_time = time.time()
         with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
@@ -331,7 +332,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/罗峰.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yctf.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/永雏塔菲.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/split2_J5_TTS_女性_愤怒_4.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000063.wav'
 cond_audio = '/audionas/users/xuanwu/tts/data/opensource/genshin_impact/zh/v4.4/芙宁娜/41850dd04f3fe844.m4a'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/41850dd04f3fe844.flac'
@@ -359,6 +359,7 @@ cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/spe
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/pangbai_48000_dfn.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/funingna.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 
 text = "是谁给你的胆量这么跟我说话，嗯? 是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
 text = "历史将永远记住同志们的杰出创造和奉献，党和人民感谢你们。"
@@ -460,6 +461,7 @@ text = "成对或结群活动，食物几乎完全是植物，各种水生植物
 text="天之道，有所得，必有所失，现实就是这样的，有所得必定会有所失。是啊，妖，变成妖你们就能在一起了。要离开修罗城，你给得了我想要的吗？我们宝青坊，妖怪法宝的锻造工坊。"
 text = "主人，星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。"
 text="我终是看到了，生在这一世，你比谁都要难，都要苦，需要一个人独断万古啊！若有一天星空炸裂，乾坤倾覆，无数故人红颜白发，魂归黄土，消失在岁月之中，而你虽世间无敌，却只能独自站在岁月长河上，回首万古，独伴大道，又会怎样呢."
+text = "他那像哄小孩似的话，引得人们哄堂大笑，大家听了一哄而散。"
 
 
 

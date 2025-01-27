@@ -24,12 +24,18 @@ class TTSModel(torch.nn.Module):
         super().__init__()
         self.cfg = OmegaConf.load(args.config)
 
-        # ['no', 'fp8', 'fp16', 'bf16']
+        '''
         if args.fp16:
             self.dtype = torch.float16
             precision = "fp16"
         else:  # fp32
             self.dtype = None
+            precision = "no"
+        '''
+        self.precision = self.cfg.train['precision']
+        # ['no', 'fp8', 'fp16', 'bf16']
+        precision = self.precision
+        if self.precision == "fp32":
             precision = "no"
         print(">> inference precision:", precision)
 
@@ -76,7 +82,8 @@ class TTSModel(torch.nn.Module):
 
     def infer_batch(self, batch, args):
         device = self.accelerator.device
-        with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+        #with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
+        with torch.no_grad():
             # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
             input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
                           batch['padded_raw_mel'], batch['wav_lens'], batch['cond_mel_lengths']]
@@ -130,8 +137,7 @@ class TTSModel(torch.nn.Module):
             self.vocos = self.vocos.module
     
         for batch_idx, batch in enumerate(self.eval_dataloader):
-            with torch.no_grad():
-                dump_datas = self.infer_batch(batch, args)
+            dump_datas = self.infer_batch(batch, args)
             for item in dump_datas:
                 key, data = item
                 if not args.dump_wav:
@@ -147,9 +153,6 @@ class TTSModel(torch.nn.Module):
 def get_args():
     parser = argparse.ArgumentParser(description='inference model dump feature')
     parser.add_argument('--config', type=str, required=True, help='config file')
-    parser.add_argument('--fp16',
-                        action='store_true',
-                        help='whether to export fp16 model, default false')
     parser.add_argument('--dump_vqvae', action='store_true', help='dump vqvae codes feature')
     parser.add_argument('--dump_latent', action='store_true', help='dump gpt latent feature')
     parser.add_argument('--dump_diffusion', action='store_true', help='dump diffusion mel feature')
@@ -178,6 +181,5 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 

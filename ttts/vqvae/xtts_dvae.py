@@ -401,7 +401,8 @@ class DiscreteVAE(nn.Module):
         if hasattr(self.codebook, "embed_code"):
             image_embeds = self.codebook.embed_code(img_seq)
         else:
-            image_embeds = F.embedding(img_seq, self.codebook.codebook)
+            #image_embeds = F.embedding(img_seq, self.codebook.codebook)
+            image_embeds = self.codebook.indices_to_codes(img_seq)
         b, n, d = image_embeds.shape
 
         kwargs = {}

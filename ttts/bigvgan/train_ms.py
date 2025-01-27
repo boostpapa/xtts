@@ -160,7 +160,7 @@ class Trainer(object):
         else:
             state_dict_g = load_checkpoint(cp_g, "cpu")
             state_dict_do = load_checkpoint(cp_do, "cpu")
-            self.generator.load_state_dict(state_dict_g["generator"])
+            self.generator.load_state_dict(state_dict_g["generator"], strict=False)
             self.mpd.load_state_dict(state_dict_do["mpd"])
             self.mrd.load_state_dict(state_dict_do["mrd"])
             self.msfd.load_state_dict(state_dict_do['msfd'])
