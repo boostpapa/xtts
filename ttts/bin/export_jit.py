@@ -160,8 +160,8 @@ class TTSModel(torch.nn.Module):
         with torch.amp.autocast('cuda', enabled=self.dtype is not None, dtype=self.dtype):
             start_time = time.time()
             #latent = self.gpt(cond_mel,
-            latent, text_lens_out, code_lens_out \
-                    = self.gpt(cond_mel,
+            latent, text_lens_out, code_lens_out = \
+                    self.gpt(cond_mel,
                         text_tokens,
                         text_lens,
                         codes,
@@ -488,13 +488,24 @@ def test():
     cond_mel = MelSpectrogramFeatures()(audio).cuda()
     print(f"cond_mel shape: {cond_mel.shape}")
 
+    use_spm = False
+    use_bbpe = False
+    use_bpe = False
+
     if 'gpt_vocab' in cfg.dataset:
         tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
-        use_spm = False
+    elif 'bbpe_model' in cfg.dataset:
+        tokenizer = spm.SentencePieceProcessor()
+        tokenizer.load(cfg.dataset['bbpe_model'])
+        use_bbpe = True
+        use_spm = True
     else:
         tokenizer = spm.SentencePieceProcessor()
         tokenizer.load(cfg.dataset['bpe_model'])
+        use_bpe = True
         use_spm = True
+        char_ratio = cfg.dataset['char_ratio'] if 'char_ratio' in cfg.dataset else 0.5
+        pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
 
     sentences = text_to_sentences(text, lang)
     #sentences = ['成对或结群活动，食物几乎完全是植物，', '各种水生植物和藻类。具有较强游牧性，', '迁移模式不规律，主要取决于气候条件，', '迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，', '有时也是居住地筑巢。 当食物稀少']
@@ -519,14 +530,30 @@ def test():
             # cleand_text = f"[{lang}] {cleand_text}"
             # cleand_text = cleand_text.replace(' ', '[SPACE]')
             print(cleand_text)
-            cleand_text = byte_encode(cleand_text)
+            if use_bbpe:
+                cleand_text = byte_encode(cleand_text)
+            elif use_bpe:
+                chars = cleand_text.split()
+                norm_text, words = clean_text1(sen, lang)
+                pinyins = ' '.join(words)
+                print(pinyins)
+            '''
+                pinyins = tokenize_by_CJK_char(pinyins).split()
+                if len(chars) == len(pinyins):
+                    n = len(chars)
+                    num_to_py = int(n * 0.2)
+                    indices = random.sample(range(n), num_to_py)
+                    for idx in indices:
+                        chars[idx] = pinyins[idx]
+                    cleand_text = " ".join(chars)
+            '''
         print(cleand_text)
         sen_tokens = torch.IntTensor(tokenizer.encode(cleand_text))
         #sen_tokens = F.pad(sen_tokens, (1, 0), value=cfg.gpt.start_text_token)
         #sen_tokens = F.pad(sen_tokens, (0, 1), value=cfg.gpt.stop_text_token)
         sens_tokens.append(sen_tokens)
 
-    text_lens = [len(x) for x in sens_tokens]
+    text_lens = [x.size(1) for x in sens_tokens]
     max_text_len = max(text_lens)
     texts_token = []
     for sen_tokens in sens_tokens:
