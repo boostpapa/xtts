@@ -37,6 +37,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             self.use_spm = True
             self.char_ratio = cfg.dataset['char_ratio'] if 'char_ratio' in cfg.dataset else 0.5
             self.pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
+        print(f"Using spm {self.use_spm}, bbpe {self.use_bbpe}, bpe {self.use_bpe} tokenizer.")
         
         self.prompt = cfg.dataset['prompt'] if 'prompt' in cfg.dataset else "random"
         print(f"Warning: get prompt wav in {self.prompt}")
@@ -66,6 +67,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
 
         self.squeeze = cfg.dataset['squeeze']
         self.sample_rate = cfg.dataset['sample_rate']
+        self.max_dur = cfg.dataset['max_dur']*100 if 'max_dur' in cfg.dataset else 2400
         self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
         self.is_eval = is_eval
 
@@ -79,6 +81,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             if (self.use_bbpe and len(strs) < 5) or (not self.use_bbpe and len(strs) < 6):
                 return None
 
+            lang = strs[3]
             if not self.use_spm:
                 cleand_text = strs[5]
                 # [language] + cleand_text
@@ -91,7 +94,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
                 if self.use_bbpe:
                     cleand_text = byte_encode(cleand_text)
                 elif self.use_bpe:
-                    if random.random() > self.char_ratio:
+                    if lang == "ZH" and random.random() > self.char_ratio:
                         chars = cleand_text.split()
                         pinyins = tokenize_by_CJK_char(strs[5]).split()
                         if len(chars) == len(pinyins):
@@ -143,8 +146,8 @@ class GptTTSDataset(torch.utils.data.Dataset):
             print(f"Warning: {wav_path} processing error, skip!")
             return None
 
-        if text.shape[0] > 300 or raw_mel.shape[1] > 2400:
-            print(f"Warning: {wav_path} text len {text.shape[0]} exceed 300 or raw mel len {raw_mel.shape[1]} exceed 2400.")
+        if text.shape[0] > 400 or raw_mel.shape[1] > self.max_dur:
+            print(f"Warning: {wav_path} text len {text.shape[0]} exceed 400 or raw mel len {raw_mel.shape[1]} exceed {self.max_dur}.")
             return None
 
         return text, raw_mel, cond_mel, wav_length
