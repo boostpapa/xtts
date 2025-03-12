@@ -1,3 +1,4 @@
+import augment
 import os
 import random
 import json
@@ -37,7 +38,9 @@ class GptTTSDataset(torch.utils.data.Dataset):
             self.use_spm = True
             self.char_ratio = cfg.dataset['char_ratio'] if 'char_ratio' in cfg.dataset else 0.5
             self.pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
-        
+
+        self.speed_ratio = cfg.dataset['speed_ratio'] if 'speed_ratio' in cfg.dataset else 0.6
+
         self.prompt = cfg.dataset['prompt'] if 'prompt' in cfg.dataset else "random"
         print(f"Warning: get prompt wav in {self.prompt}")
 
@@ -112,12 +115,18 @@ class GptTTSDataset(torch.utils.data.Dataset):
             wav_path = strs[1]
             spkid = strs[2]
 
-            wave = load_audio(wav_path, self.sample_rate)
-            #print(f"wave.shape: {wave.shape}")
-            if wave is None:
+            use_speed = True if random.random() < self.speed_ratio else False
+
+            wav = load_audio(wav_path, self.sample_rate)
+            #print(f"wav.shape: {wav.shape}")
+            if wav is None:
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
-            mel = self.mel_extractor(wave)[0]
+            if use_speed and random.random() < 0.6:
+                factor = str(random.uniform(0.75, 1.25))
+                wav = augment.EffectChain().tempo(factor).apply(wav, src_info={'rate': self.sample_rate})
+
+            mel = self.mel_extractor(wav)[0]
             wav_length = mel.shape[1] * 256
             raw_mel = mel
             #print(f"raw_mel.shape: {raw_mel.shape}")
@@ -132,13 +141,17 @@ class GptTTSDataset(torch.utils.data.Dataset):
                 cond_wav_path = self.spk2wav[spkid][idx]
             else:
                 cond_wav_path = random.choice(self.spk2wav[spkid])
-            cond_wave = load_audio(cond_wav_path, self.sample_rate)
-            #cond_wave = wave
-            if cond_wave is None:
+            cond_wav = load_audio(cond_wav_path, self.sample_rate)
+            #cond_wav = wav
+            if cond_wav is None:
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
-            cond_wave_clip = get_prompt_slice(cond_wave, 15, 3, self.sample_rate, self.is_eval)
-            cond_mel = self.mel_extractor(cond_wave_clip)[0]
+            if use_speed and random.random() < 0.6:
+                cond_factor = str(random.uniform(0.75, 1.25))
+                cond_wav = augment.EffectChain().tempo(cond_factor).apply(cond_wav, src_info={'rate': self.sample_rate})
+
+            cond_wav_clip = get_prompt_slice(cond_wav, 15, 3, self.sample_rate, self.is_eval)
+            cond_mel = self.mel_extractor(cond_wav_clip)[0]
         except:
             print(f"Warning: {wav_path} processing error, skip!")
             return None
@@ -147,13 +160,13 @@ class GptTTSDataset(torch.utils.data.Dataset):
             print(f"Warning: {wav_path} text len {text.shape[0]} exceed 300 or raw mel len {raw_mel.shape[1]} exceed 2400.")
             return None
 
-        return text, raw_mel, cond_mel, wav_length
+        return text, raw_mel, cond_mel, wav_length, use_speed
 
     def __len__(self):
         return len(self.datalist)
 
 
-class GptTTSCollater():
+class GptTTSCollator:
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -178,13 +191,15 @@ class GptTTSCollater():
         wav_lens = [x[3] for x in batch]
         max_wav_len = max(wav_lens)
 
+        use_speeds = [x[4] for x in batch]
+
         texts = []
         raw_mels = []
         cond_mels = []
         wavs = []
         # This is the sequential "background" tokens that are used as padding for text tokens, as specified in the DALLE paper.
         for sample in batch:
-            text, raw_mel, cond_mel, wav = sample
+            text, raw_mel, cond_mel, wav, _ = sample
             text = F.pad(text, (0, max_text_len-len(text)), value=0)
             texts.append(text)
             raw_mels.append(F.pad(raw_mel, (0, max_raw_mel_len-raw_mel.shape[1]), value=0))
@@ -200,7 +215,8 @@ class GptTTSCollater():
             'raw_mel_lengths': LongTensor(raw_mel_lens),
             'padded_cond_mel': padded_cond_mel,
             'cond_mel_lengths': LongTensor(cond_mel_lens),
-            'wav_lens': LongTensor(wav_lens)
+            'wav_lens': LongTensor(wav_lens),
+            'use_speeds': torch.tensor(use_speeds, dtype=torch.bool),
         }
 
 
@@ -211,7 +227,7 @@ if __name__ == '__main__':
     #cfg = AttrDict(json_cfg)
     cfg = OmegaConf.load(open('configs/config.yaml'))
     train_dataset = GptTTSDataset(cfg, cfg.dataset['training_files'], is_eval=False)
-    train_dataloader = DataLoader(train_dataset, **cfg.dataloader, collate_fn=GptTTSCollater(cfg))
+    train_dataloader = DataLoader(train_dataset, **cfg.dataloader, collate_fn=GptTTSCollator(cfg))
     i = 0
     m = []
     max_text = 0

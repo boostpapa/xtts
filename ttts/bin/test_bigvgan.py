@@ -341,19 +341,22 @@ for sent in sentences:
     text_len = [text_tokens.size(1)]
     text_len = torch.IntTensor(text_len).to(device)
     print(text_len)
+    num_codes = [0]
+    use_speeds = torch.tensor(num_codes) > 0
     with torch.no_grad():
         codes = gpt.inference_speech(auto_conditioning, text_tokens,
-                                cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
-                                text_lengths=text_len,
-                                do_sample=True,
-                                top_p=top_p,
-                                top_k=top_k,
-                                temperature=temperature,
-                                num_return_sequences=autoregressive_batch_size,
-                                length_penalty=length_penalty,
-                                num_beams=num_beams,
-                                repetition_penalty=repetition_penalty,
-                                max_generate_length=max_mel_tokens)
+                                     cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
+                                     text_lengths=text_len,
+                                     num_codes=num_codes,
+                                     do_sample=True,
+                                     top_p=top_p,
+                                     top_k=top_k,
+                                     temperature=temperature,
+                                     num_return_sequences=autoregressive_batch_size,
+                                     length_penalty=length_penalty,
+                                     num_beams=num_beams,
+                                     repetition_penalty=repetition_penalty,
+                                     max_generate_length=max_mel_tokens)
         print(codes)
         print(codes.shape)
         print(f"codes shape: {codes.shape}")
@@ -370,6 +373,7 @@ for sent in sentences:
                     gpt(auto_conditioning, text_tokens,
                     torch.tensor([text_tokens.shape[-1]], device=text_tokens.device), codes,
                     torch.tensor([codes.shape[-1]*gpt.mel_length_compression], device=text_tokens.device),
+                    use_speeds=use_speeds,
                     cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
                     return_latent=True, clip_inputs=False)
         latent = latent.transpose(1, 2)
