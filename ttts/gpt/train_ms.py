@@ -5,7 +5,7 @@ from omegaconf import OmegaConf
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 from ttts.utils.utils import EMA, clean_checkpoints, plot_spectrogram_to_numpy, summarize, update_moving_average
-from ttts.gpt.dataset import GptTTSCollater, GptTTSDataset
+from ttts.gpt.dataset import GptTTSCollator, GptTTSDataset
 from ttts.gpt.model import UnifiedVoice
 from ttts.vqvae.xtts_dvae import DiscreteVAE
 import torch
@@ -83,8 +83,8 @@ class Trainer(object):
             self.cfg = OmegaConf.load(args.config)
         self.train_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['training_files'], is_eval=False)
         self.eval_dataset = GptTTSDataset(self.cfg, self.cfg.dataset['validation_files'], is_eval=True)
-        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollater(self.cfg))
-        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollater(self.cfg))
+        self.train_dataloader = DataLoader(self.train_dataset, **self.cfg.dataloader, collate_fn=GptTTSCollator(self.cfg))
+        self.eval_dataloader = DataLoader(self.eval_dataset, **self.cfg.dataloader_eval, collate_fn=GptTTSCollator(self.cfg))
         self.train_steps = self.cfg.train['train_steps']
         self.eval_interval = self.cfg.train['eval_interval']
         self.save_interval = self.cfg.train['save_interval'] if 'save_interval' in self.cfg.train else None
@@ -207,7 +207,7 @@ class Trainer(object):
             for batch_idx, batch in enumerate(self.eval_dataloader):
                 # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
                 input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
-                                batch['padded_raw_mel'], batch['wav_lens']]
+                                batch['padded_raw_mel'], batch['wav_lens'], batch['use_speeds']]
                 input_data = [d.to(device) for d in input_data]
                 # get vqvae codes from raw mel
                 input_data[3] = self.dvae.get_codebook_indices(input_data[3])
@@ -251,7 +251,7 @@ class Trainer(object):
                     continue
                 # speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths
                 input_data = [batch['padded_cond_mel'], batch['padded_text'], batch['text_lengths'],
-                                batch['padded_raw_mel'], batch['wav_lens']]
+                              batch['padded_raw_mel'], batch['wav_lens'], batch['use_speeds']]
                 input_data = [d.to(device) for d in input_data]
                 # get vqvae codes from raw mel
                 with torch.no_grad():
