@@ -641,7 +641,7 @@ class UnifiedVoice(nn.Module):
         #loss_mel = F.cross_entropy(mel_logits, mel_targets.long())
         return loss_text.mean(), loss_mel.mean(), mel_logits
 
-    def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths, use_speeds,
+    def forward(self, speech_conditioning_latent, text_inputs, text_lengths, mel_codes, wav_lengths, use_speeds=None,
                 cond_mel_lengths=None, types=None, text_first=True, raw_mels=None, return_attentions=False,
                 return_latent=False, clip_inputs=False):
         """
@@ -679,15 +679,17 @@ class UnifiedVoice(nn.Module):
         #mel_codes_lengths = torch.div(wav_lengths, self.mel_length_compression, rounding_mode='trunc')
         mel_codes_lengths = torch.ceil(wav_lengths / self.mel_length_compression).long() + 1
         mel_codes = self.set_mel_padding(mel_codes, mel_codes_lengths)
-        # duration_emb = self.duration_emb(mel_codes_lengths)
-        duration_emb = self.mel_pos_embedding.emb(mel_codes_lengths) * use_speeds.unsqueeze(1)
 
         text_inputs = self.set_text_padding(text_inputs, text_lengths)
         text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
         mel_codes = F.pad(mel_codes, (0, 1), value=self.stop_mel_token)
 
-        #conds = speech_conditioning_latent
-        conds = torch.cat((speech_conditioning_latent, duration_emb.unsqueeze(1)), 1)
+        conds = speech_conditioning_latent
+        if use_speeds is not None:
+            # duration_emb = self.duration_emb(mel_codes_lengths)
+            duration_emb = self.mel_pos_embedding.emb(mel_codes_lengths+1) * use_speeds.unsqueeze(1)
+            conds = torch.cat((speech_conditioning_latent, duration_emb.unsqueeze(1)), 1)
+
         text_inputs, text_targets = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
         text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
         mel_codes, mel_targets = self.build_aligned_inputs_and_targets(mel_codes, self.start_mel_token, self.stop_mel_token)
@@ -738,7 +740,7 @@ class UnifiedVoice(nn.Module):
         loss_mel = F.cross_entropy(mel_logits, lm_target_mel.long())
         return loss_text.mean(), loss_mel.mean(), mel_logits
 
-    def inference_speech_deprecated(self, cond_mel, text_inputs, cond_mel_lengths=None, input_tokens=None,
+    def inference_speech_deprecated(self, cond_mel, text_inputs, num_codes=None, cond_mel_lengths=None, input_tokens=None,
                                     num_return_sequences=1,max_generate_length=None, typical_sampling=False,
                                     typical_mass=.9, **hf_generate_kwargs):
 
@@ -747,11 +749,12 @@ class UnifiedVoice(nn.Module):
         text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
 
         conds = self.get_conditioning(cond_mel, cond_mel_lengths)
-        # duration_emb = self.duration_emb(num_codes)
-        duration_emb = self.mel_pos_embedding.emb(num_codes)
-        # conds = speech_conditioning_latent
-        conds = torch.cat((speech_conditioning_latent, duration_emb.unsqueeze(1)), 1)
+        if num_codes is not None:
+            # duration_emb = self.duration_emb(num_codes)
+            duration_emb = self.mel_pos_embedding.emb(num_codes)
+            conds = torch.cat((speech_conditioning_latent, duration_emb.unsqueeze(1)), 1)
         emb = torch.cat([conds, text_emb], dim=1)
+
         self.inference_model.store_mel_emb(emb)
 
         # +1 for the start_audio_token
@@ -796,7 +799,7 @@ class UnifiedVoice(nn.Module):
         lm_input = pad_sequence(lm_input, batch_first=True, padding_value=IGNORE_ID)
         return lm_input, lm_input_len
 
-    def inference_speech(self, cond_mel, text_inputs, num_codes, cond_mel_lengths=None, text_lengths=None, input_tokens=None, num_return_sequences=1,
+    def inference_speech(self, cond_mel, text_inputs, num_codes=None, cond_mel_lengths=None, text_lengths=None, input_tokens=None, num_return_sequences=1,
                          max_generate_length=None, typical_sampling=False, typical_mass=.9, **hf_generate_kwargs):
 
         text_inputs = F.pad(text_inputs, (0, 1), value=self.stop_text_token)
@@ -804,11 +807,12 @@ class UnifiedVoice(nn.Module):
         text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
 
         conds = self.get_conditioning(cond_mel, cond_mel_lengths)
-        # duration_emb = self.duration_emb(num_codes)
-        use_speeds = torch.tensor(num_codes) > 0
-        duration_emb = self.mel_pos_embedding.emb(num_codes) * use_speeds
-        # conds = speech_conditioning_latent
-        conds = torch.cat((conds, duration_emb.unsqueeze(1)), 1)
+        if num_codes is not None:
+            # duration_emb = self.duration_emb(num_codes)
+            use_speeds = num_codes > 0
+            duration_emb = self.mel_pos_embedding.emb(num_codes) * use_speeds
+            conds = torch.cat((conds, duration_emb.unsqueeze(1)), 1)
+
         emb, emb_len = self.rearrange_sequence(conds, text_emb, text_lengths+2)
         self.inference_model.store_mel_emb(emb)
 

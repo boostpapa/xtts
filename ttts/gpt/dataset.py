@@ -40,7 +40,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             self.pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
         print(f"Using spm {self.use_spm}, bbpe {self.use_bbpe}, bpe {self.use_bpe} tokenizer.")
 
-        self.speed_ratio = cfg.dataset['speed_ratio'] if 'speed_ratio' in cfg.dataset else 0.6
+        self.speed_ratio = cfg.dataset['speed_ratio'] if 'speed_ratio' in cfg.dataset else 0.0
         self.prompt = cfg.dataset['prompt'] if 'prompt' in cfg.dataset else "random"
         print(f"Warning: get prompt wav in {self.prompt}")
 
@@ -81,6 +81,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             # key, wav_path, spkid, language, raw_text
             strs = line.strip().split("|")
             if (self.use_bbpe and len(strs) < 5) or (not self.use_bbpe and len(strs) < 6):
+                print(f"Warning: {line} Missing field, skip!")
                 return None
 
             lang = strs[3]
@@ -124,7 +125,7 @@ class GptTTSDataset(torch.utils.data.Dataset):
             if wav is None:
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
-            if use_speed and random.random() < 0.6:
+            if use_speed and random.random() < 0.7:
                 factor = str(random.uniform(0.75, 1.25))
                 wav = augment.EffectChain().tempo(factor).apply(wav, src_info={'rate': self.sample_rate})
 
@@ -142,13 +143,19 @@ class GptTTSDataset(torch.utils.data.Dataset):
                     
                 cond_wav_path = self.spk2wav[spkid][idx]
             else:
-                cond_wav_path = random.choice(self.spk2wav[spkid])
+                for i in range(5):
+                    cond_wav_path = random.choice(self.spk2wav[spkid])
+                    if cond_wav_path != wav_path:
+                        break
+                if cond_wav_path == wav_path and not self.is_eval:
+                    print(f"Warning: {cond_wav_path} {spkid} cond_wav_path is the same with wav_path, skip!")
+                    return None
             cond_wav = load_audio(cond_wav_path, self.sample_rate)
             #cond_wav = wav
             if cond_wav is None:
-                print(f"Warning: {wav_path} loading error, skip!")
+                print(f"Warning: {cond_wav_path} loading error, skip!")
                 return None
-            if use_speed and random.random() < 0.6:
+            if use_speed and random.random() < 0.7:
                 cond_factor = str(random.uniform(0.75, 1.25))
                 cond_wav = augment.EffectChain().tempo(cond_factor).apply(cond_wav, src_info={'rate': self.sample_rate})
 

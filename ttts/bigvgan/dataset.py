@@ -1,4 +1,5 @@
 import os
+import augment
 from omegaconf import OmegaConf
 import random
 import torch
@@ -36,6 +37,7 @@ class BigVGANDataset(torch.utils.data.Dataset):
             self.pinyin_ratio_sen = cfg.dataset['pinyin_ratio_sen'] if 'pinyin_ratio_sen' in cfg.dataset else 0.2
         print(f"Using spm {self.use_spm}, bbpe {self.use_bbpe}, bpe {self.use_bpe} tokenizer.")
 
+        self.speed_ratio = cfg.dataset['speed_ratio'] if 'speed_ratio' in cfg.dataset else 0.0
         self.datalist = []
         with open(datafile, 'r', encoding='utf8') as fin:
             for line in fin:
@@ -55,6 +57,9 @@ class BigVGANDataset(torch.utils.data.Dataset):
         try:
             line = self.datalist[index]
             strs = line.strip().split("|")
+            if (self.use_bbpe and len(strs) < 5) or (not self.use_bbpe and len(strs) < 6):
+                print(f"Warning: {line} Missing field, skip!")
+                return None
 
             lang = strs[3]
             if not self.use_spm:
@@ -87,6 +92,7 @@ class BigVGANDataset(torch.utils.data.Dataset):
             # print(f"text_tokens.shape: {text_tokens} {len(text_tokens)}")
 
             wav_path = strs[1]
+            use_speed = True if random.random() < self.speed_ratio else False
 
             wav = load_audio(wav_path, self.sample_rate)
             if wav is None:
@@ -97,6 +103,14 @@ class BigVGANDataset(torch.utils.data.Dataset):
             end = 4*self.sample_rate if wav_len/2 > 4*self.sample_rate else int(wav_len/2)
             wav_infer = wav[:, :end]
             wav_refer = wav[:, int(wav_len/2):wav_len]
+
+            if use_speed and random.random() < 0.7:
+                factor = str(random.uniform(0.75, 1.25))
+                wav_infer = augment.EffectChain().tempo(factor).apply(wav_infer, src_info={'rate': self.sample_rate})
+
+            if use_speed and random.random() < 0.7:
+                cond_factor = str(random.uniform(0.75, 1.25))
+                wav_refer = augment.EffectChain().tempo(cond_factor).apply(wav_refer, src_info={'rate': self.sample_rate})
 
             '''
             audio_data = wav_refer[0].numpy()
@@ -122,7 +136,7 @@ class BigVGANDataset(torch.utils.data.Dataset):
             print(f"Warning: {wav_path} text len {text_tokens.shape[0]} exceed 400 or raw mel len {mel_refer.shape[1]*2} exceed {self.max_dur}.")
             return None
 
-        return text_tokens, mel_refer, mel_infer, wav_infer, wav_refer
+        return text_tokens, mel_refer, mel_infer, wav_infer, wav_refer, use_speed
 
     def __len__(self):
         return len(self.datalist)
@@ -152,6 +166,8 @@ class BigVGANCollator:
         wav_refer_lens = [x[4].shape[1] for x in batch]
         max_wav_refer_lens = max(wav_refer_lens)
 
+        use_speeds = [x[5] for x in batch]
+
         texts = []
         mel_refers = []
         mel_infers = []
@@ -159,7 +175,7 @@ class BigVGANCollator:
         wav_refers = []
         # This is the sequential "background" tokens that are used as padding for text tokens, as specified in the DALLE paper.
         for sample in batch:
-            text_token, mel_refer, mel_infer, wav_infer, wav_refer = sample
+            text_token, mel_refer, mel_infer, wav_infer, wav_refer, _ = sample
 
             texts.append(F.pad(text_token, (0, max_text_len-len(text_token)), value=0))
             mel_refers.append(F.pad(mel_refer, (0, max_mel_refer_lens-mel_refer.shape[1]), value=0))
@@ -184,4 +200,5 @@ class BigVGANCollator:
             'wav_infer_lens': LongTensor(wav_infer_lens),
             'padded_wav_refer': padded_wav_refer,
             'wav_refer_lens': LongTensor(wav_refer_lens),
+            'use_speeds': torch.tensor(use_speeds, dtype=torch.bool),
         }

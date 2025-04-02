@@ -285,6 +285,7 @@ class Trainer(object):
                 wav_infer_lens = batch['wav_infer_lens']
                 wav_refer = batch['padded_wav_refer']
                 wav_refer_lens = batch['wav_refer_lens']
+                use_speeds = batch['use_speeds']
 
                 y_ = wav_infer.squeeze(1)
                 mel_ref = mel_refer
@@ -297,6 +298,7 @@ class Trainer(object):
                                      text_lens,
                                      mel_code,
                                      wav_infer_lens,
+                                     use_speeds=use_speeds,
                                      cond_mel_lengths=mel_refer_len,
                                      return_latent=True,
                                      clip_inputs=False,)
