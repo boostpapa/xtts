@@ -752,7 +752,7 @@ class UnifiedVoice(nn.Module):
         if num_codes is not None:
             # duration_emb = self.duration_emb(num_codes)
             duration_emb = self.mel_pos_embedding.emb(num_codes)
-            conds = torch.cat((speech_conditioning_latent, duration_emb.unsqueeze(1)), 1)
+            conds = torch.cat((conds, duration_emb.unsqueeze(1)), 1)
         emb = torch.cat([conds, text_emb], dim=1)
 
         self.inference_model.store_mel_emb(emb)
