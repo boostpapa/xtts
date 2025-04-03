@@ -33,10 +33,10 @@ def text_to_sequence(text, language):
 def text_to_sentences(text, language, min_len=None, max_len=None):
     if language == "ZH":
         min_len = 15 if min_len is None else min_len
-        max_len = 50 if max_len is None else max_len
+        max_len = 60 if max_len is None else max_len
     elif language == "EN":
         min_len = 10 if min_len is None else min_len
-        max_len = 30 if max_len is None else max_len
+        max_len = 40 if max_len is None else max_len
     return chinese.split_sentences(text, min_len, max_len)
 
 
