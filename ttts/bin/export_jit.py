@@ -33,6 +33,7 @@ class TTSModel(torch.nn.Module):
         super().__init__()
         self.cfg = OmegaConf.load(args.config)
 
+        self.stop_mel_token = self.cfg.gpt.stop_mel_token
         if 'gpt_vocab' in self.cfg.dataset:
             self.tokenizer = VoiceBpeTokenizer(self.cfg.dataset['gpt_vocab'])
             self.use_spm = False
@@ -131,7 +132,7 @@ class TTSModel(torch.nn.Module):
                 len_ = len(code)
             else:
                 #len_ = code.cpu().tolist().index(8193)+1
-                len_ = (code == 8193).nonzero(as_tuple=False)[0]+1
+                len_ = (code == self.stop_mel_token).nonzero(as_tuple=False)[0]+1
                 len_ = len_ - 2
 
             count = torch.sum(code == 52).item()
@@ -150,7 +151,7 @@ class TTSModel(torch.nn.Module):
                     #    n += 1
                 len_ = len(ncode)
                 ncode = torch.LongTensor(ncode)
-                codes[i] = 8193
+                codes[i] = self.stop_mel_token
                 codes[i, 0:len_] = ncode
             code_lens.append(len_)
         code_lens = torch.LongTensor(code_lens).cuda()
@@ -265,7 +266,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/5639-40744-002
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/22all/22/speak/ZH/wav/22-all_speak_ZH_YouYou_emotion_ZH_309自豪_20230613_20230627-0150729-0155966.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xialiu-chuanpu.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/live_audio2_57.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/bjincheng.wav'
 cond_audio = '/speechwork/users/wd007/tts/yourtts/zhibo/live_audio2/wavs/live_audio2_741.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/zhoujielun.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xuyuanshen.wav'
@@ -302,7 +302,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xuyunhan.wav'
 cond_audio = '/cfs/import/tts/opensource/LJSpeech/LJSpeech-1.1/wavs/LJ002-0145.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/DianJi_zh.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/opensource/baker_BZNSYP/Wave/008669.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/牛奶君-zh.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/agave.wav'
 cond_audio = '/dfs/import/asr/comm/yueyu/MDT2019S001/WAV/G0001/G0001_S0003.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/230007_sad.wav'
@@ -311,7 +310,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/400400292_2278
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/387493773_997779326_1178570460_prompt.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/j5_angry_2.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seen1_spk.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
 cond_audio = '/speechfs01/users/siyi/data/MeiHuo/speak/ZHEN/wav/200083.wav'
 cond_audio = '/speechfs01/users/siyi/data/aip-897482638-34f3b83216b9e5f58c3a541754e28d49/speak/ZH/wav/00000001_000352.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/gen_swk.wav'
@@ -321,7 +319,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/XiaoXin.
 cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/prompt/BaGe.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/BaGe1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/jia_chun.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/kaishu1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/naxida.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/东雪莲.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sange1.wav'
@@ -337,29 +334,42 @@ cond_audio = '/audionas/users/xuanwu/tts/data/opensource/genshin_impact/zh/v4.4/
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/41850dd04f3fe844.flac'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/split2_J5_TTS_女性_愤怒_4.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/hanser_zh.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sunwukong.wav'
 cond_audio = '/audionas/users/xuanwu/tts/data/bilibili/pgc/xialei/process/flac_cut/xialei3_262.flac'
-cond_audio = '/audionas/users/xuanwu/tts/data/bilibili/pgc/xialei/process/flac_cut/xialei3_19.flac'
 cond_audio = '/speechfs01/users/wd007/tts/src/bilibili/bilibili_tts/zero-shot-test/chenrui.wav'
 cond_audio = '/speechfs01/data/tts/opensource/baker_BZNSYP/Wave/002650.wav'
-cond_audio = '/speechwork/users/wd007/tts/yourtts/mix_cn/prompt/chenrui/chenrui2.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/界兽摩罗撒.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/bzshort/luofeng_48000_dfn.wav'
-cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000228.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_en1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/旁白.wav'
-cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/jiachun/jiachun/speak/ZH/wav/00000001_000019.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/少女_甜美_哭泣_02.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yangshi_zhaopin.wav'
 cond_audio = '/speechfs01/users/siyi/data/DaiMeng/speak/ZH/wav/002741.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xueli.wav'
-cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/pangbai_48000_dfn.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/funingna.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/牛奶君-zh.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xueli.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/bzshort/luofeng_48000_dfn.wav'
+cond_audio = '/audionas/users/xuanwu/tts/data/bilibili/pgc/xialei/process/flac_cut/xialei3_19.flac'
+cond_audio = '/speechwork/users/wd007/tts/yourtts/mix_cn/prompt/chenrui/chenrui2.wav'
+cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000228.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sunwukong.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_en1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed-en2.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed-en3.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/旁白.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/kaishu1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/bjincheng.wav'
+cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/zoey.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
+cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/jiachun/jiachun/speak/ZH/wav/00000001_000019.wav'
+cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/houyi_promptvn.wav'
+cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/luyu_promptvn.wav'
+cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/lijing_promptvn.wav'
+cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/nezhai_promptvn.wav'
+cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/furina_promptvn.wav'
+cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/xijinpin.wav'
 
 text = "是谁给你的胆量这么跟我说话，嗯? 是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
 text = "历史将永远记住同志们的杰出创造和奉献，党和人民感谢你们。"
@@ -381,7 +391,6 @@ text = "HE SAT DOWN WEAK BEWILDERED AND ONE THOUGHT WAS UPPERMOST ZORA."
 text = "即便是北上广深等供应偏紧的一线城市, 明确了发展目标和重点任务, 新批复了七只创投基金的设立方案."
 text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, "
 text = "好奇的灵魂渴望突破自己,去寻找另外的世界"
-text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划.如果大家时间都 ok 的话,就安排在今天下午 review 了.然后可能得辛苦 harry 老师帮忙组织一下团建的事,嗯也不知道安排怎么样了,今天下午我要放假了,接下来一周就不在公司,大家新年快乐!"
 text = "不得不说，人生真是充满了意外，而降临在我头上的，总是比较差的那一种。这件事，说起来还挺让人不好意思的……今天下楼的时候，突然有个人冲过来撞到了我，我一个没站稳，脚就扭伤了。重点不是这个，重点是我刚才去了医院，医生说，我的脚伤比较严重，三个月都不能剧烈运动，三个月啊，那我们的滑雪计划怎么办！我们之前计划了好久，想要下周去滑雪，但谁能想到，好好的计划被一个突然冲出来的路人破坏了。我现在还在悔恨，要是今天没有出门就好了。等到下次，可能就没有现在这种期待的心情了。最重要的是，你为了下周特地空出了时间，如果去不了，这也太遗憾了。真的吗，那我这算是……因祸得福了？你说你要来照顾我，而不是来看我一眼就走，这代表，你会把下周所有的时间都给我，虽然脚还是很疼，但一想到这件事，我就觉得很开心。说到这个，我还有一个小小的请求，下周，你可不可以搬过来和我一起住啊？我没有别的意思，只是不想让你浪费往返的时间。还有，我受伤了，心理很脆弱，如果不能时刻都看到你，我怕我会忍不住崩溃，你不会想看到这一幕发生的，对吧？你不用准备什么东西的，我这边都有！而且我只是脚受伤了，又不是完全不能自理，我想让你来，只是想跟你一起度过未来一周的时间。"
 text = "俯下身子尽量靠近一点，但不能碰到我的鼻尖。对保持这个姿势, 告诉我你在我的身上闻到了什么味道. 这样就觉得难了, 但这次服从性测试实验是你自己要做的. 知道了我会加快一点速度, 现在我命令你看着我的眼睛不准移开, 然后亲吻我."
 text = "天空上，火幕蔓延而开，将方圆数以千万计的人类尽数笼罩。而在火幕扩散时，那绚丽火焰之中的人影也是越来越清晰。片刻后，火焰减弱而下，一道黑衫身影，便是清楚的出现在了这片天地之间。真的是萧炎…，在联盟总部不远处的一处，大量的人群簇拥在一起，看这模样，显然都是属于同一个势力。而此刻，在那人群之中，一道身形壮硕的男子，正抬起头，目光火热的望着天空上那道身影，声音中，透着浓浓的兴奋。柳擎大哥，真的是他？在男子身后，一名容貌娇美的女子，也是忍不住的道，谁能想到，短短十数年时间不见而已，当年同在迦南学院修炼的学弟，竟然已站在了这个大陆的真正巅峰。"
@@ -406,7 +415,6 @@ text = "兔兔自己在外面随便干干零活，菲菲心急如焚，小斐却
 text = "菲菲心急如焚，小斐却不慌不忙地跟凡凡打电话聊嗨了"
 text = "敬老院将为他们免费治病"
 text = "花木兰的主角儿是刘亦菲"
-text = "相传在远古的时候，天上突然出现了十个太阳，晒得大地直冒烟，老百姓实在无法生活下去了。有一个力大无比的英雄名叫后羿，他决心为老百姓解除这个苦难。后羿登上昆仑山顶，运足气力，拉满神弓，嗖——嗖——嗖——一口气射下九个太阳。他对天上最后一个太阳说从今以后，你每天必须按时升起，按时落下，为民造福！后羿为老百姓除了害，大伙儿都很敬重他。很多人拜他为师，跟他学习武艺。有个叫逄蒙的人，为人奸诈贪婪，也随着众人拜在大羿的门下。"
 text = "他俩一口气跑到村头旧屠宰场的空木棚那里才停下来。"
 text = "这次展会，哔哩哔哩还带来了最懂大家的自研大语言模型index，以及行业领先的5分钟生成数字人技术。同时，我们还展示了行业一流AI动态漫的前沿科技。作为AIGC领域最大的内容平台，哔哩哔哩也将持续为大家带来更多感动与共鸣，“看AI前沿热点，上B站！”"
 text = "大家好～很开心能参加二零二四世界人工智能大会的数字分身制作体验，感谢哔哩哔哩能在这么短的时间内为我制作了孪生兄弟。“以共商促共享，以善治促善智”，在这个充满变革与创新的时代，人工智能成为了引领行业发展的重要引擎，为社会发展带来了新机遇，是引领未来的战略性技术。"
@@ -415,15 +423,12 @@ text = "兔兔自己在外面随便干干零活"
 text = "崽子突然跳到我桌子上，吓得我一抽抽儿。是呀，他拼命抢球头盔都掉了。埃菲尔铁塔是世界上最著名的名胜之一。"
 text="今天大家玩得真高兴，大家都尽兴而归，兴致真好, 我们下调今天的GDP增长比例吧，这个音调太高了。"
 text = "八了百了标了兵了奔了北了坡，炮了兵了并了排了北了边了跑， 炮了兵了怕了把了标了兵了碰，标了兵了怕了碰了炮了兵了炮。粉红墙上画凤凰，凤凰画在粉红墙。 红凤凰、粉凤凰，红粉凤凰花凤凰。"
-text = "once upon a time, there lived in a certain village. a little country girl, the prettiest creature who was ever seen. her mother was accessibly fond of her and her grandmother doted on her still more."
-text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, Open-Sora not only democratizes access to advanced video generation techniques, but also offers a streamlined and user-friendly platform that simplifies the complexities of video production. With Open-Sora, we aim to inspire innovation, creativity, and inclusivity in the realm of content creation."
 text = "香格里拉，松树和栎树自然杂交林中，卓玛和妈妈正在寻找着一种精灵般的食物——松茸。"
 text="月亮弯弯弯上天,牛角弯弯弯两边,镰刀弯弯好割草,犁头弯弯好耕田."
 text="单老师说，单于只会骑马，不会骑单车."
 text="That is to say观鲸业已经成为一个快速发展的leisure industry。"
 text="公公又问，讲嘅系边度嘅姑娘啊。"
 text = "大家好, B A I 开放平台上线了声音复刻功能,我的声音呢就是通过大模型做出来的,我们很容易达到一个一百万播放的目标啊,快来平台体验吧!"
-text="海南省位于中国版图的最南端，南部的南沙群岛，界定了中国最南的国界；北部的琼州海峡，隔开了海南岛与内陆。我们的旅程从北部开始，探索火山如何塑造岛屿，前往一座洋溢着闯荡精神的城市。沿着北部海岸线，邂逅三座风格迥异的灯塔。这是一条三十公里宽的海峡，它的南岸是中国第二大岛——海南岛。海南岛本来是内陆的一部分，六千万年前，地壳运动让部分陆地下陷，海水淹没了这里，形成了古琼州海峡。伴随着塌陷和海峡形成，火山开始喷发。"
 text = "And then later on, fully acquiring that company. So keeping management in line, interest in line with the asset that\'s coming into the family is a reason why sometimes we don\'t buy the whole thing."
 text = "不是，说好的奇幻剧呢，怎么全程谈恋爱啊，就这还给我安利？又是一部披着奇幻外壳的爱情烂俗偶像剧。记住！我们不是吐槽，我们只是快乐的搬运工。同学们能bb就别控制，毕竟吐槽见真情啊！"
 text = "亚长牛尊是现今为止殷墟发现的唯一一件牛形青铜器。头前伸，嘴微张，憨态可掬。它不仅是祭祀的酒器，还是殷商时期人神沟通的媒介。"
@@ -447,21 +452,55 @@ text = "大家好啊，我是148，今天来点大家想看的东西"
 text = "是谁给你的胆量这么跟我说话，嗯? 是你的灵主还是你的伙伴？听着，没用的小东西，这里是城下街，不是过家家的学院！停下你无聊至极的喋喋不休，学着用城下街的方式来解决问题！"
 text = "俯下身子尽量靠近一点，但不能碰到我的鼻尖。对保持这个姿势, 告诉我你在我的身上闻到了什么味道. 这样就觉得难了, 但这次服从性测试实验是你自己要做的. 知道了我会加快一点速度, 现在我命令你看着我的眼睛不准移开, 然后亲吻我. 俯下身子尽量靠近一点, 但不能碰到我的鼻尖, 对,   保持这个姿势, 告诉我你在我的身上闻到了什么味道. 这样就觉得难了, 但这次服从性测试实验是你自己要参与的. 知道了我会加快一些速度, 现在我命令你看着我的眼睛不准移开, 然后亲吻我, 怎么突然凑这么近, 我的脸上是有什么东西吗? 耳朵那边有些红, 想帮我看看没有不舒服, 只是耳朵那边有些敏感, 对,特别是那里, 啊轻点!"
 text = "接下来给大家介绍一个团购产品--深圳绿景酒店1晚加双人下午茶。首先，让我们来看看这个团购的价格,这个团购包含的房间门市价是每晚1888元，直播间售价1晚住宿加其他项目只需要1618元。接下来，我们来详细介绍一下这个团购的各个项目。首先是住宿项目，房型有高级双床房或高级大床房，可任选其中一个房型。这两种房型都有38平米的面积，位于8-12层，视野开阔，房间内有窗户，可以欣赏室外的城景或花园景,无论是商务出差还是休闲旅游，都能满足您的需求。其次是双人下午茶项目，这个项目包含了精美的下午茶套餐，让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
-text = "团长你就是个鸡吧，我就在这沈阳大街骂你奥，到沈阳了，必给你头套薅下来，必打你脸"
 text = "都死了."
-text = "顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。"
-text = "庆历四年春，滕子京谪守巴陵郡。越明年，政通人和，百废具兴，乃重修岳阳楼，增其旧制，刻唐贤今人诗赋于其上，属予作文以记之。予观夫巴陵胜状，在洞庭一湖。衔远山，吞长江，浩浩汤汤，横无际涯，朝晖夕阴，气象万千，此则岳阳楼之大观也，前人之述备矣。然则北通巫峡，南极潇湘，迁客骚人，多会于此，览物之情，得无异乎？"
 text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划.如果大家时间都 ok 的话,就安排在今天下午 review 了.然后可能得辛苦 harry 老师帮忙组织一下团建的事,嗯也不知道安排怎么样了,今天下午我要放假了,接下来一周就不在公司,大家新年快乐!"
 text="停靠在码头的LNG液化天然气运输船，是国际上公认的高技术、高附加值、高可靠性的船舶。目前沪东中华手持LNG船订单五十多艘，生产任务排到二零三一年。"
-text = "先帝创业未半而中道崩殂，今天下三分，益州疲弊，此诚危急存亡之秋也。然侍卫之臣不懈于内，忠志之士忘身于外者，盖追先帝之殊遇，欲报之于陛下也。"
 text = "床前明月光,疑是地上霜.举头望明月,低头思故乡。"
-text="人间灯火倒映湖中，她的渴望让静水泛起涟漪。若代价只是孤独，那就让这份愿望肆意流淌。流入她所注视的世间，也流入她如湖水般澄澈的目光。"
 text = "瓶子倒了，水倒了出来, 大都市的人口都很多, 汤匙、钥匙都放在桌子上. 有空闲就好好读书，尽量少说空话. 据史书记载，王昭君多才多艺，每逢三年五载汉匈首脑聚会，她都要载歌载舞。陈涛参加体育锻炼缺乏毅力、一曝十寒的事情在校会上被曝光，他感到十分羞愧。他那像哄小孩似的话，引得人们哄堂大笑，大家听了一哄而散。"
-text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少."
-text="天之道，有所得，必有所失，现实就是这样的，有所得必定会有所失。是啊，妖，变成妖你们就能在一起了。要离开修罗城，你给得了我想要的吗？我们宝青坊，妖怪法宝的锻造工坊。"
 text = "主人，星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。"
-text="我终是看到了，生在这一世，你比谁都要难，都要苦，需要一个人独断万古啊！若有一天星空炸裂，乾坤倾覆，无数故人红颜白发，魂归黄土，消失在岁月之中，而你虽世间无敌，却只能独自站在岁月长河上，回首万古，独伴大道，又会怎样呢."
 text = "他那像哄小孩似的话，引得人们哄堂大笑，大家听了一哄而散。"
+text = "先帝创业未半而中道崩殂，今天下三分，益州疲弊，此诚危急存亡之秋也。然侍卫之臣不懈于内，忠志之士忘身于外者，盖追先帝之殊遇，欲报之于陛下也。"
+text="我终是看到了，生在这一世，你比谁都要难，都要苦，需要一个人独断万古啊！若有一天星空炸裂，乾坤倾覆，无数故人红颜白发，魂归黄土，消失在岁月之中，而你虽世间无敌，却只能独自站在岁月长河上，回首万古，独伴大道，又会怎样呢."
+text="天之道，有所得，必有所失，现实就是这样的，有所得必定会有所失。是啊，妖，变成妖你们就能在一起了。要离开修罗城，你给得了我想要的吗？我们宝青坊，妖怪法宝的锻造工坊。"
+text="俯下身子尽量靠近一点，但不能碰到我的鼻尖。对保持这个姿势, 告诉我你在我的身上闻到了什么味道. "
+text = "团长你就是个鸡吧，我就在这沈阳大街骂你奥，到沈阳了，必给你头套薅下来，必打你脸"
+text = "庆历四年春，滕子京谪守巴陵郡。越明年，政通人和，百废具兴，乃重修岳阳楼，增其旧制，刻唐贤今人诗赋于其上，属予作文以记之。予观夫巴陵胜状，在洞庭一湖。衔远山，吞长江，浩浩汤汤，横无际涯，朝晖夕阴，气象万千，此则岳阳楼之大观也，前人之述备矣。然则北通巫峡，南极潇湘，迁客骚人，多会于此，览物之情，得无异乎？"
+text="海南省位于中国版图的最南端，南部的南沙群岛，界定了中国最南的国界；北部的琼州海峡，隔开了海南岛与内陆。我们的旅程从北部开始，探索火山如何塑造岛屿，前往一座洋溢着闯荡精神的城市。沿着北部海岸线，邂逅三座风格迥异的灯塔。这是一条三十公里宽的海峡，它的南岸是中国第二大岛——海南岛。海南岛本来是内陆的一部分，六千万年前，地壳运动让部分陆地下陷，海水淹没了这里，形成了古琼州海峡。伴随着塌陷和海峡形成，火山开始喷发。"
+text = "相传在远古的时候，天上突然出现了十个太阳，晒得大地直冒烟，老百姓实在无法生活下去了。有一个力大无比的英雄名叫后羿，他决心为老百姓解除这个苦难。后羿登上昆仑山顶，运足气力，拉满神弓，嗖——嗖——嗖——一口气射下九个太阳。他对天上最后一个太阳说从今以后，你每天必须按时升起，按时落下，为民造福！后羿为老百姓除了害，大伙儿都很敬重他。很多人拜他为师，跟他学习武艺。有个叫逄蒙的人，为人奸诈贪婪，也随着众人拜在大羿的门下。"
+text="人间灯火倒映湖中，她的渴望让静水泛起涟漪。若代价只是孤独，那就让这份愿望肆意流淌。流入她所注视的世间，也流入她如湖水般澄澈的目光。"
+text="疫情让每一位默默奉献的人们在历史上写下重重的一笔"
+text="二零一三年二月二十五日,什班巴正式和中国足球甲级联赛球队河南建业签约."
+text="'这称为曲面的余定向,对欧几里得空间中的曲面,等价于给定曲面的一个定向'."
+text="'梅兰芳'中,梅兰芳一角为何选定为黎明"
+text="由于冠状动脉在心肌内行走"
+text="他说的可谓一语中的, 牛逼的不行。'参见'汗血马', 子武隆阿,嘉庆初年即随父剿叛军于四川,功多,累擢副都统."
+text="朝生夕死,手拿量筒使其自然垂直, 济宁市政区图,茄克更是一种信仰,另置太中大夫,中散大夫"
+text = "顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。"
+text = "处理家庭秘密从来都不是一件容易的事。然而，有时候，隐瞒是一种保护形式，旨在保护一些人免受残酷的真相伤害。有一天，我希望你能理解我行为背后的原因。在那之前，安娜，请容忍我。"
+text = "once upon a time, there lived in a certain village. a little country girl, the prettiest creature who was ever seen. her mother was accessibly fond of her and her grandmother doted on her still more."
+text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, Open-Sora not only democratizes access to advanced video generation techniques, but also offers a streamlined and user-friendly platform that simplifies the complexities of video production. With Open-Sora, we aim to inspire innovation, creativity, and inclusivity in the realm of content creation."
+text="建筑工地的钻机发出刺耳声响，工人正在钻研新型施工方案。快递员抱着一卷图纸气喘吁吁，反复确认包裹卷标上的地址。茶室里飘来差异明显的两种茶香，老板解释这是海拔差导致的特色。路边的泊车位已全部停满。志愿者举着“传递爱心”的标语牌*，向行人传授急救知识。"
+text = "听着你的话，我心里五味杂陈。虽然我愿意一直在你身边，承担一切不幸，但我知道只有让你自己面对，才能真正让你变得更强大。所以，你要记得，无论面对何种困难，都请你坚强，我会在心里一直支持你的。"
+text="今天的天气格外晴朗，阳光透过树叶的缝隙洒在地上，像一片片跳动的金色碎片。他沿着小路行走，手里捧着一本厚重的书，偶尔停下脚步看看远处的山峦。路边的长椅上坐着一位老人，正专注地给鸽子喂食。忽然，一阵风刮过，几片树叶落下，其中一片恰好卡在了他的衣领间。他笑着摇摇头，继续向前走，心里却想着：“这大概就是生活的小插曲吧。“不远处，一群孩子正在乐园里玩耍，笑声清脆得仿佛能穿透云层。"
+text="喂。"
+text="是的"
+text="哇"
+text="As Jay said, if there's a key to unlock that time, when you hid Jay Chou's cassette in your backpack and brought it to school. Objectively speaking, Kevin Durant doesn't deserve to be mentioned in the same breath as James. He doesn't deserve it at all. Sometimes, Russell found the questions too simple and felt insulted, so he wouldn't answer."
+text="my name is Sarina"
+text="try it; if it works, great; if not, no worries."
+text="Hey, Zoey here. Long time. Nine months since my last post. I'm back. During these nine months, I did a lot of things, so I want to share them with you today. What I did, why I stopped updating, and why I'm back now. This is something for me. a hard thing."
+text="I struggled for a long time before deciding to stop updating, so it's not easy to answer briefly. I forced myself to stop the intense work habits. Because I wanted to reset my brain, like shutting down a computer and restarting it. Because I felt like I've been running at high speed for years without ever truly shutting down."
+text="她站在厨房里，手里握着一把长勺，慢慢搅动着锅里的汤。汤的香味散发出来，让整个房间都暖洋洋的。窗外的雨还在下，淅淅沥沥的雨声中，她忽然想起明天要重新整理书架。书架上摆满了她收集的旧书，有的封面已经褪色，但每一本都藏着一段回忆。她轻轻叹了口气，转身从冰箱里拿出一盒牛奶，倒进杯子时不小心洒了几滴。这时，手机响了，是朋友发来的消息：“周末要不要一起去爬山？”  "
+text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少"
+text = "那个等会儿有时间吧那个那个下午三哥要拉个会,跟大家一起对一下下半年规划.如果大家时间都 ok 的话,就安排在今天下午 review 了.然后可能得辛苦 harry 老师帮忙组织一下团建的事,嗯也不知道安排怎么样了,今天下午我要放假了,接下来一周就不在公司,大家新年快乐!"
+text = "有一种撕心裂肺的感觉，是辣椒，我加了辣椒！"
+text = "智能生活，触手可及，本节目由致力于人工智能创新的未来公司冠名播出。数据驱动决策，为你加速未来，本节目由深度学习技术领导者，未来科技特约播出。打造智慧城市新时代，本节目由未来智能硬件先锋，未来科技赞助播出。"
+text = "你知道吗，人工智能就像是我们生活中的一个“无形伙伴”，它不声不响地走进了我们的世界，改变了我们的工作、生活、甚至思维方式。它让我们看到了很多可能性，也让我们意识到，未来的生活可能比我们想象的还要复杂和美好。"
+text = "你可知为什么他们都不愿意和你合作？因为你太聪明了，聪明到让他们觉得自己毫无优势。他们害怕与你站在同一起跑线，怕被你的智慧甩得远远的。其实，真正让他们害怕的，不是你的聪明，而是他们自己内心的自卑和不自信。"
+text = "他们说我注定不配拥有什么，注定要背负那些沉重的枷锁，活在他们的期望里。每天都得做那些他们安排好的事，像个没有自由的傀儡，根本没法活成自己。这个世界，这些人，真的一点也不值得我去在乎。"
+text = "我对自己的歌唱水平还是很有自信的，不过值得我开口唱诵的段落可不多。希望那些剧团里的创作者们加把劲，不要让我等太久。"
+text = "伟大的美国，我们会赢的，而且是大胜. Make America Great Again，no body knows it better than me."
+
 
 
 
@@ -552,8 +591,11 @@ def test():
         #sen_tokens = F.pad(sen_tokens, (1, 0), value=cfg.gpt.start_text_token)
         #sen_tokens = F.pad(sen_tokens, (0, 1), value=cfg.gpt.stop_text_token)
         sens_tokens.append(sen_tokens)
+        if use_spm:
+            text_token_syms = [tokenizer.IdToPiece(idx) for idx in sen_tokens.tolist()]
+            print(text_token_syms)
 
-    text_lens = [x.size(1) for x in sens_tokens]
+    text_lens = [x.size(0) for x in sens_tokens]
     max_text_len = max(text_lens)
     texts_token = []
     for sen_tokens in sens_tokens:

@@ -11,7 +11,7 @@ from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.text.cleaner import clean_text1, text_normalize, text_to_sentences
 from ttts.utils.utils import load_audio
 
-device = 'cuda:2'
+device = 'cuda:3'
 
 from ttts.utils.infer_utils import load_model
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
@@ -302,10 +302,11 @@ testscp="/speechfs01/data/tts/test/interspeech2025_all/test.scp"
 testscp="/speechfs02/users/wd007/work2024/tts/test/v202502/bilibili_all.test.scp"
 testscp="/speechfs02/users/wd007/work2024/tts/test/v202502/bilibili_all_dur.test.scp"
 testscp="/speechfs01/data/tts/test/interspeech2025_all/test_dur.scp"
-testscp="/speechfs01/data/tts/test/interspeech2025_all/test_dur.scp.tmp"
+testscp="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/splits/tmp.scp"
 
 testcsv="/speechfs02/users/wd007/work2024/tts/test/v202502/bilibili.clean.csv"
 testcsv="/speechfs01/data/tts/test/interspeech2025_all/test.clean.csv"
+testcsv="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/seed_test.clean.csv"
 
 outpath="/speechfs02/users/wd007/work2024/tts/test/interspeech2025/alltest/startts_char_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/interspeech2025/alltest/startts_test_output"
@@ -319,6 +320,7 @@ outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/opensource_all_test_o
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/opensource_all_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/bilibili_all_dur_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/opensource_all_dur_test_output"
+outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/seed_all_test_output"
 
 import os
 if not os.path.exists(outpath):
