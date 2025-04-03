@@ -351,23 +351,28 @@ zero_wav = torch.zeros(1, int(sampling_rate*0.2))
 for sent in sentences:
     sent = sent.strip().lower()
 '''
-idx=1
+idx = 1
 for line in testkeys:
     strs = line.strip().split("\t")
     pkey = strs[0]
     key = strs[1]
     pwav = infos[pkey][1]
+    lang = infos[pkey][3]
+
     if not use_spm:
         cleand_text = infos[key][5]
     else:
         cleand_text = tokenize_by_CJK_char(infos[key][4])
 
-    dur = 0 if len(strs)<=2 else float(strs[2])
+    sentences = text_to_sentences(cleand_text, lang)
+
+    dur = 0 if len(strs) <= 2 else float(strs[2])
     #dur = 0
 
     audio = load_audio(pwav, 24000)
     cond_mel = MelSpectrogramFeatures()(audio).to(device)
     auto_conditioning = cond_mel
+    wavs = []
      
     #print(sent)
     #pinyin = ' '.join(lazy_pinyin(sent, style=Style.TONE3, neutral_tone_with_five=True))
@@ -402,66 +407,68 @@ for sen in sentences:
     '''
         #cleand_text = "他 那 像 HONG3 小 孩 似 的 话 , 引 得 人 们 HONG1 堂 大 笑 , 大 家 听 了 一 HONG4 而 SAN3 ."
         #print(cleand_text)
-    text_tokens = torch.IntTensor(tokenizer.encode(cleand_text)).unsqueeze(0).to(device)
-    
-    #text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
-    #text_tokens = F.pad(text_tokens, (1,0), value=0)
-    #text_tokens = F.pad(text_tokens, (0,1), value=1)
-    text_tokens = text_tokens.to(device)
-    #print(text_tokens)
-    #print(f"text_tokens shape: {text_tokens.shape}")
-    #text_token_syms = [tokenizer.IdToPiece(idx) for idx in text_tokens[0].tolist()]
-    #print(text_token_syms)
-    text_len = [text_tokens.size(1)]
-    text_len = torch.IntTensor(text_len).to(device)
-    #print(text_len)
-    #dur = 0
-    if dur > 0:
-        num_codes = int(dur*24*1000/gpt.mel_length_compression)
-        num_codes = torch.tensor([num_codes], device=device)
-        use_speeds = num_codes > 0
-    else:
-        num_codes = None
-        use_speeds = None
-    with torch.no_grad():
-        codes = gpt.inference_speech(auto_conditioning, text_tokens,
-                                    cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
-                                    text_lengths=text_len,
-                                     num_codes=num_codes,
-                                    do_sample=True,
-                                    top_p=top_p,
-                                    top_k=top_k,
-                                    temperature=temperature,
-                                    num_return_sequences=autoregressive_batch_size,
-                                    length_penalty=length_penalty,
-                                    num_beams=num_beams,
-                                    repetition_penalty=repetition_penalty,
-                                    max_generate_length=max_mel_tokens)
-        #print(codes)
-        #print(codes.shape)
-        #print(f"codes shape: {codes.shape}")
-        codes = codes[:, :-2]
-        #print(f"codes shape: {codes.shape}")
-        mel1, _ = dvae.decode(codes)
-        wav1 = vocos.decode(mel1.detach().cpu())
-        #torchaudio.save('gen1.wav',wav1.detach().cpu(), 24000)
-        wav1 = 32767 / max(0.01, torch.max(torch.abs(wav1))) * 1.0 * wav1.detach()
-        torch.clip(wav1, -32767.0, 32767.0)
-        wavs1.append(wav1)
 
-        latent, text_lens_out, code_lens_out = \
-                    gpt(auto_conditioning, text_tokens,
-                    torch.tensor([text_tokens.shape[-1]], device=text_tokens.device), codes,
-                    torch.tensor([codes.shape[-1]*gpt.mel_length_compression], device=text_tokens.device),
-                    use_speeds=use_speeds,
-                    cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
-                    return_latent=True, clip_inputs=False)
-        latent = latent.transpose(1, 2)
-        latent_list = []
-        for lat, t_len in zip(latent, text_lens_out):
-            lat = lat[:, t_len:]
-            latent_list.append(lat)
-        latent = torch.stack(latent_list)
+    for sent in sentences:
+        text_tokens = torch.IntTensor(tokenizer.encode(sent)).unsqueeze(0).to(device)
+
+        #text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
+        #text_tokens = F.pad(text_tokens, (1,0), value=0)
+        #text_tokens = F.pad(text_tokens, (0,1), value=1)
+        text_tokens = text_tokens.to(device)
+        #print(text_tokens)
+        #print(f"text_tokens shape: {text_tokens.shape}")
+        #text_token_syms = [tokenizer.IdToPiece(idx) for idx in text_tokens[0].tolist()]
+        #print(text_token_syms)
+        text_len = [text_tokens.size(1)]
+        text_len = torch.IntTensor(text_len).to(device)
+        #print(text_len)
+        #dur = 0
+        if dur > 0:
+            num_codes = int(dur*24*1000/gpt.mel_length_compression)
+            num_codes = torch.tensor([num_codes], device=device)
+            use_speeds = num_codes > 0
+        else:
+            num_codes = None
+            use_speeds = None
+        with torch.no_grad():
+            codes = gpt.inference_speech(auto_conditioning, text_tokens,
+                                        cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
+                                        text_lengths=text_len,
+                                         num_codes=num_codes,
+                                        do_sample=True,
+                                        top_p=top_p,
+                                        top_k=top_k,
+                                        temperature=temperature,
+                                        num_return_sequences=autoregressive_batch_size,
+                                        length_penalty=length_penalty,
+                                        num_beams=num_beams,
+                                        repetition_penalty=repetition_penalty,
+                                        max_generate_length=max_mel_tokens)
+            #print(codes)
+            #print(codes.shape)
+            #print(f"codes shape: {codes.shape}")
+            codes = codes[:, :-2]
+            #print(f"codes shape: {codes.shape}")
+            mel1, _ = dvae.decode(codes)
+            wav1 = vocos.decode(mel1.detach().cpu())
+            #torchaudio.save('gen1.wav',wav1.detach().cpu(), 24000)
+            wav1 = 32767 / max(0.01, torch.max(torch.abs(wav1))) * 1.0 * wav1.detach()
+            torch.clip(wav1, -32767.0, 32767.0)
+            wavs1.append(wav1)
+
+            latent, text_lens_out, code_lens_out = \
+                        gpt(auto_conditioning, text_tokens,
+                        torch.tensor([text_tokens.shape[-1]], device=text_tokens.device), codes,
+                        torch.tensor([codes.shape[-1]*gpt.mel_length_compression], device=text_tokens.device),
+                        use_speeds=use_speeds,
+                        cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
+                        return_latent=True, clip_inputs=False)
+            latent = latent.transpose(1, 2)
+            latent_list = []
+            for lat, t_len in zip(latent, text_lens_out):
+                lat = lat[:, t_len:]
+                latent_list.append(lat)
+            latent = torch.stack(latent_list)
         #print(f"latent shape: {latent.shape}")
 
         #print(f"auto_conditioning shape: {auto_conditioning.shape}")
@@ -470,11 +477,13 @@ for sen in sentences:
         wav = 32767 * wav
         torch.clip(wav, -32767.0, 32767.0)
         #print(f"wav shape: {wav.shape}")
-        #wavs.append(wav)
-        #torchaudio.save(f'{outpath}/{idx:07d}_{pkey}_{key}_0.wav', wav.type(torch.int16), 24000)
-        torchaudio.save(f'{outpath}/{pkey}_{key}.wav', wav.type(torch.int16), 24000)
-        idx += 1
-        print(f"{pkey}\t{key}\t{cleand_text}", flush=True);
+        wavs.append(wav)
+
+    wav = torch.cat(wavs, dim=1)
+    #torchaudio.save(f'{outpath}/{idx:07d}_{pkey}_{key}_0.wav', wav.type(torch.int16), 24000)
+    torchaudio.save(f'{outpath}/{pkey}_{key}.wav', wav.type(torch.int16), 24000)
+    idx += 1
+    print(f"{pkey}\t{key}\t{cleand_text}", flush=True)
 
 
 #from IPython.display import Audio
