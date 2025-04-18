@@ -30,13 +30,13 @@ config='/speechwork/users/wd007/tts/xtts2/gpt/baseline_mix_2409/exp/baseline_bpe
 config='/juicefs/users/wd007/work2024/tts/xtts2/gpt/baseline_fqs_2409/exp/baseline_bpemix_space_ds/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/gpt/emilia_2501/exp/baseline_bpemix_space_large_ds/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_bigvgan_pytorch/config.yaml'
-config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_mix_2409/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/baseline_fqs_2409/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501_v1/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa1/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2503_v1/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_mix_2409/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 
 cfg = OmegaConf.load(config)
 
@@ -303,10 +303,14 @@ testscp="/speechfs02/users/wd007/work2024/tts/test/v202502/bilibili_all.test.scp
 testscp="/speechfs02/users/wd007/work2024/tts/test/v202502/bilibili_all_dur.test.scp"
 testscp="/speechfs01/data/tts/test/interspeech2025_all/test_dur.scp"
 testscp="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/splits/tmp.scp"
+testscp="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/splits/test_hard.scp"
+testscp="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/test_seed.scp"
+testscp="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/test_seed_hard.scp"
 
 testcsv="/speechfs02/users/wd007/work2024/tts/test/v202502/bilibili.clean.csv"
 testcsv="/speechfs01/data/tts/test/interspeech2025_all/test.clean.csv"
 testcsv="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/seed_test.clean.csv"
+testcsv="/speechfs02/users/wd007/work2024/tts/test/test_set/seedtts_testset/process/seed_test_hard.clean.csv"
 
 outpath="/speechfs02/users/wd007/work2024/tts/test/interspeech2025/alltest/startts_char_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/interspeech2025/alltest/startts_test_output"
@@ -321,6 +325,9 @@ outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/opensource_all_test_o
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/bilibili_all_dur_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/opensource_all_dur_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/seed_all_test_output"
+outpath="/speechfs02/users/wd007/work2024/tts/test/v202501/seed_all_test_output"
+outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/seed_zh_hard_test_output"
+outpath="/speechfs02/users/wd007/work2024/tts/test/v202501/seed_zh_hard_test_output"
 
 import os
 if not os.path.exists(outpath):
@@ -359,12 +366,9 @@ for line in testkeys:
     pwav = infos[pkey][1]
     lang = infos[pkey][3]
 
-    if not use_spm:
-        cleand_text = infos[key][5]
-    else:
-        cleand_text = tokenize_by_CJK_char(infos[key][4])
-
+    cleand_text = infos[key][4] if use_spm else infos[key][5]
     sentences = text_to_sentences(cleand_text, lang)
+    print(f"{pkey}\t{key}\t{sentences}", flush=True)
 
     dur = 0 if len(strs) <= 2 else float(strs[2])
     #dur = 0
@@ -409,6 +413,8 @@ for sen in sentences:
         #print(cleand_text)
 
     for sent in sentences:
+        sent = tokenize_by_CJK_char(sent) if use_spm else sent
+        print(f"{pkey}\t{key}\t{sent}", flush=True)
         text_tokens = torch.IntTensor(tokenizer.encode(sent)).unsqueeze(0).to(device)
 
         #text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
@@ -469,21 +475,20 @@ for sen in sentences:
                 lat = lat[:, t_len:]
                 latent_list.append(lat)
             latent = torch.stack(latent_list)
-        #print(f"latent shape: {latent.shape}")
+            #print(f"latent shape: {latent.shape}")
 
-        #print(f"auto_conditioning shape: {auto_conditioning.shape}")
-        wav, _ = vocoder(latent.transpose(1, 2), auto_conditioning.transpose(1,2))
-        wav = wav.squeeze(1).cpu()
-        wav = 32767 * wav
-        torch.clip(wav, -32767.0, 32767.0)
-        #print(f"wav shape: {wav.shape}")
-        wavs.append(wav)
+            #print(f"auto_conditioning shape: {auto_conditioning.shape}")
+            wav, _ = vocoder(latent.transpose(1, 2), auto_conditioning.transpose(1,2))
+            wav = wav.squeeze(1).cpu()
+            wav = 32767 * wav
+            torch.clip(wav, -32767.0, 32767.0)
+            #print(f"wav shape: {wav.shape}")
+            wavs.append(wav)
 
     wav = torch.cat(wavs, dim=1)
     #torchaudio.save(f'{outpath}/{idx:07d}_{pkey}_{key}_0.wav', wav.type(torch.int16), 24000)
     torchaudio.save(f'{outpath}/{pkey}_{key}.wav', wav.type(torch.int16), 24000)
     idx += 1
-    print(f"{pkey}\t{key}\t{cleand_text}", flush=True)
 
 
 #from IPython.display import Audio

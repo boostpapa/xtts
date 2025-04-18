@@ -29,9 +29,13 @@ config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_
 config='/speechwork/users/wd007/tts/xtts2/gpt/s2_bpe_v2/exp/baseline_bpemix_ds/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/gpt/emilia_2501_v1/exp/baseline_bpemix_space_large_speed_ds1/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/gpt/emilia_2503/exp/baseline_bpemix_space_large_fix_speed_ds/config.yaml'
-config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa1/config.yaml'
+config='/juicefs/users/wd007/work2024/tts/xtts2/gpt/emilia_2503/exp/baseline_bpemix_space_large_ds/config.yaml'
+config='/juicefs/users/wd007/work2024/tts/xtts2/gpt/emilia_2503/exp/baseline_bpemix_space_large_speed_ds/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2503_v1/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
+config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2503/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa_speed/config.yaml'
+config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa1/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/gpt/baseline_mix_2409/exp/baseline_bpemix_space_ds/config.yaml'
+config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2503/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 
 cfg = OmegaConf.load(config)
 
@@ -82,7 +86,6 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xuyuanshen.wav
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/guanguan.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/ham_male1.wav'
-cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/taylor1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/duyujiao.wav'
 cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/dengwei1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/格恩猫-demo.wav'
@@ -130,21 +133,25 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/xiaotao.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yueyue.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/sunwukong.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
-cond_audio = '/speechwork/users/wd007/tts/yourtts/mix_cn/prompt/chenrui/chenrui2.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luoxiang1.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/ugctest/prompt/NvHai.wav'
 cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000228.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/tunshixinkong1.wav'
 cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/xijinpin.wav'
 cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/xiang.wav'
 cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/bzshort/denoise.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luofeng.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_en1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/magi.wav'
+cond_audio = '/speechwork/users/wd007/tts/yourtts/mix_cn/prompt/chenrui/chenrui2.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luofeng.wav'
+cond_audio = '/juicefs/users/wd007/work2024/tts/xtts2/gpt/emilia_2503/huanyin_prompt/00004.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 cond_audio = '/speechwork/users/wd007/tts/data/bilibili/manual/MeiHuo/MeiHuo/speak/ZH/wav/002266.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/luoxiang1.wav'
+cond_audio = '/speechwork/users/wd007/tts/fishspeech/academiCodec/s1/test_wav/taylor1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/LTY-10s.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/kaishu1.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/seed_tts_en1.wav'
 
+print(f"prompt audio: {cond_audio}")
 audio,sr = torchaudio.load(cond_audio)
 if audio.shape[0]>1:
     audio = audio[0].unsqueeze(0)
@@ -237,12 +244,9 @@ text="This perfume has gotten me the most compliments when going out in public. 
 text="因为在那个时候呢，有各种各样的广告啊，然后呢包括一些代言的一些收入，啊然后当时的，呃，当时呢有因为我有很多呃，大学的老师是在呃这个台曾经任职过的，他们当时也有非常多的。比方说啧呃，因为现在也没有像，就是以前的话，也没有像现在的这个产配音的产业这么齐全嘛。"
 text = "Mr. Brown, what is this on the wall?"
 text = "瓶子倒了，水倒了出来, 大都市的人口都很多, 汤匙、钥匙都放在桌子上. 有空闲就好好读书，尽量少说空话. 据史书记载，王昭君多才多艺，每逢三年五载汉匈首脑聚会，她都要载歌载舞。陈涛参加体育锻炼缺乏毅力、一曝十寒的事情在校会上被曝光，他感到十分羞愧。他那像哄小孩似的话，引得人们哄堂大笑，大家听了一哄而散。"
-text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, Open-Sora not only democratizes access to advanced video generation techniques, but also offers a streamlined and user-friendly platform that simplifies the complexities of video production. With Open-Sora, we aim to inspire innovation, creativity, and inclusivity in the realm of content creation."
 text = "What time do you usually go to bed? 我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
-text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少."
 text = "香格里拉，松树和栎树自然杂交林中，卓玛和妈妈正在寻找着一种精灵般的食物——松茸。"
 text = "Hello大家好，2023年的B站百大名单刚刚公布，过几天就会在上海进行线下颁奖。如果你还没看，那么这是今年的完整名单。数据上，今年百大的平均粉丝量为四百二十五点二万，粉丝中位数为三百二十四万，而这，是具体的粉丝量分布。可以看到依然是一百万到两百万粉的up主人数是最多的。"
-text = "把我的脚放在他们脚下，求他们踩，求他们原谅吗？难道真的要这样吗？你是真的不可理喻，真的不可理喻！森琦老师，我是真的不懂，为什么这么难的需求要找到我！你真的觉得这个需求我能搞得定吗？别那么异想天开了好不好！好不好！"
 text="我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
 text = "兔年春节不复阳！本集没有任何广告，是近百名冒险伙伴的在抗阳战场上的经验总结，欢迎收藏转发分享给你在乎的人！ 本视频点赞过一万，马上解锁 走走而已超燃特别跟练"
 text = "接下来给大家介绍一个团购产品--深圳绿景酒店1晚加双人下午茶。首先，让我们来看看这个团购的价格,这个团购包含的房间门市价是每晚1888元，直播间售价1晚住宿加其他项目只需要1618元。接下来，我们来详细介绍一下这个团购的各个项目。首先是住宿项目，房型有高级双床房或高级大床房，可任选其中一个房型。这两种房型都有38平米的面积，位于8-12层，视野开阔，房间内有窗户，可以欣赏室外的城景或花园景,无论是商务出差还是休闲旅游，都能满足您的需求。其次是双人下午茶项目，这个项目包含了精美的下午茶套餐，让您和您的伴侣可以在酒店内享受美食的同时，感受到酒店的温馨和舒适。"
@@ -261,9 +265,16 @@ text = "Alright, Student Sun, Student Sun"
 text = "Xiang, what?"
 text = "Can you buy a steamed bun? Even with one dollar, you can't get two, haha."
 text="星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。主人，我们终于抵达起源大陆了。"
-text = "顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。"
 text = "帘外雨潺潺，春意阑珊。罗衾不耐五更寒。梦里不知身是客，一晌贪欢。独自莫凭栏，无限江山。别时容易见时难。流水落花春去也，天上人间。"
+text = "We present Open-Sora, an initiative dedicated to efficiently produce high-quality video and make the model, tools and contents accessible to all. By embracing open-source principles, Open-Sora not only democratizes access to advanced video generation techniques, but also offers a streamlined and user-friendly platform that simplifies the complexities of video production. With Open-Sora, we aim to inspire innovation, creativity, and inclusivity in the realm of content creation."
+text="I must protest this injustice."
 text="人间灯火倒映湖中，她的渴望让静水泛起涟漪。若代价只是孤独，那就让这份愿望肆意流淌。流入她所注视的世间，也流入她如湖水般澄澈的目光。"
+text = "This perfume has gotten me the most compliments when going out in public. This is a product I think should be viral, but it's not yet, and I kind of want to gate keep it because I don't want it to sell out. That you guys need this."
+text = "some call me nature, others call me mother nature. I have been here for four point five billion years. twenty two thousand five hundred times longer then you."
+text = "成对或结群活动，食物几乎完全是植物，各种水生植物和藻类。具有较强游牧性，迁移模式不规律，主要取决于气候条件，迁移时会组成成千上万的大团体。它们是所有天鹅中迁徒地最少的物种，有时也是居住地筑巢。 当食物稀少."
+text = "把我的脚放在他们脚下，求他们踩，求他们原谅吗？难道真的要这样吗？你是真的不可理喻，真的不可理喻！森琦老师，我是真的不懂，为什么这么难的需求要找到我！你真的觉得这个需求我能搞得定吗？别那么异想天开了好不好！好不好！"
+text = "相传在远古的时候，天上突然出现了十个太阳，晒得大地直冒烟，老百姓实在无法生活下去了。有一个力大无比的英雄名叫后羿，他决心为老百姓解除这个苦难。后羿登上昆仑山顶，运足气力，拉满神弓，嗖——嗖——嗖——一口气射下九个太阳。他对天上最后一个太阳说从今以后，你每天必须按时升起，按时落下，为民造福！后羿为老百姓除了害，大伙儿都很敬重他。很多人拜他为师，跟他学习武艺。有个叫逄蒙的人，为人奸诈贪婪，也随着众人拜在大羿的门下。"
+text = "顿时，气氛变得沉郁起来。乍看之下，一切的困扰仿佛都围绕在我身边。我皱着眉头，感受着那份压力，但我知道我不能放弃，不能认输。于是，我深吸一口气，心底的声音告诉我：无论如何，都要冷静下来，重新开始。"
 
 
 
@@ -290,8 +301,8 @@ sentences = [i for i in re.split(pattern, text) if i.strip() != ""]
 
 lang = "EN"
 lang = "ZH"
-#sentences = text_to_sentences(text, lang)
-sentences = [text]
+sentences = text_to_sentences(text, lang)
+#sentences = [text]
 print(sentences)
 
 top_p = .8
@@ -319,6 +330,7 @@ for sent in sentences:
     else:
         norm_text = text_normalize(sent, lang)
         cleand_text = norm_text
+        #cleand_text = '高 高 山 上 一 座 庙 , 住 了 八 个 出 家 人 , 八 个 道 人 都 有 名 ,大 弟 子 ,叫 凳 大 ,二 弟 子 ,'
         cleand_text = tokenize_by_CJK_char(cleand_text)
         #cleand_text = f"[{lang}] {cleand_text}"
         #cleand_text = cleand_text.replace(' ', '[SPACE]')
