@@ -26,6 +26,7 @@ import jieba.posseg as psg
 rep_map = {
     "：": ",",
     "；": ",",
+    ";": ",",
     "，": ",",
     "。": ".",
     "！": "!",
@@ -80,7 +81,8 @@ def _clean_space(text):
         
 
 def replace_punctuation(text):
-    text = text.replace("嗯", "恩").replace("呣", "母")
+    #text = text.replace("嗯", "恩").replace("呣", "母")
+    text = text.replace("呣", "母")
     pattern = re.compile("|".join(re.escape(p) for p in rep_map.keys()))
 
     replaced_text = pattern.sub(lambda x: rep_map[x.group()], text)
@@ -110,15 +112,43 @@ def _sentence_len(sentence):
         sen_len += len(w.strip().split())
     return sen_len
 
+def _recursive_split(text, max_length):
+        text_length = _sentence_len(text)
+        if text_length <= max_length:
+            return [text]
 
-def split_sentences(text, min_len=15, max_len=50):
+        current_length = 0
+        mid_index = 0
+        for i, char in enumerate(text):
+            if re.match(r'[\u4e00-\u9fff]', char):
+                current_length += 1
+            elif re.match(r"[a-zA-Z'-]", char):
+                if i == 0 or not re.match(r"[a-zA-Z'-]", text[i - 1]):
+                    current_length += 1
+            if current_length >= text_length // 2:
+                mid_index = i
+                break
+
+        # 移动到单词边界
+        while mid_index < len(text) and re.match(r"[a-zA-Z'-]", text[mid_index]):
+            mid_index += 1
+
+        left_part = text[:mid_index + 1]
+        right_part = text[mid_index + 1:]
+
+        left_result = _recursive_split(left_part, max_length)
+        right_result = _recursive_split(right_part, max_length)
+
+        return left_result + right_result
+
+def split_sentences(text, min_len=15, max_len=60):
     sentences = [ss for ss in re.split(sen_pattern, text) if ss.strip() != ""]
 
     sen_lens = []
     merge_flags = []
     length = len(sentences)
-    if length <= 1:
-        return sentences
+    #if length <= 1:
+    #    return sentences
 
     sentences1 = []
     for i in range(0, length):
@@ -178,22 +208,20 @@ def split_sentences(text, min_len=15, max_len=50):
         else:
             merge_flags[idx] = True
             sen_lens[idx] = min_len
+
+    ### 分割超长无任何标点的句子 ###
+    sentences1 = sentences
+    sentences = []
+    #all_punc = '[' + re.escape(''.join(sen_punctuation+pau_punctuation)) + ']'
+    for sen in sentences1:
+        #if not re.search(all_punc, sen):
+        if _sentence_len(sen) > max_len:
+            new_sens = _recursive_split(sen, max_len)
+            sentences.extend(new_sens)
+        else:
+            sentences.append(sen)
+
     return sentences
-
-
-def _is_all_chinese(strs):
-    for _char in strs:
-        if not '\u4e00' <= _char <= '\u9fa5':
-            return False
-    return True
-
-
-def _is_all_punc(strs):
-    punc = "".join(punctuation)
-    for c in strs:
-        if c not in punc:
-            return False
-    return True
 
 
 def _split_cn_en(str):
@@ -228,6 +256,7 @@ def split_cn_en(seg_cut):
 
 
 def g2w(text):
+    text = text.replace("嗯", "恩").replace("呣", "母")
     pattern = r"(?<=[{0}])\s*".format("".join(punctuation))
     sentences = [i for i in re.split(pattern, text) if i.strip() != ""]
     phones = _g2w(sentences)
@@ -303,7 +332,8 @@ def _g2w(segments):
         k = 0
         for word, pos in seg_cut:
             #print(word, pos)
-            if word == " ":
+            word = word.strip()
+            if word == " " or word == "":
                 continue
             if word == EN_WORD_TG:
                 phones_list.append(enwords[k].lower())
@@ -380,9 +410,11 @@ def text_normalize(text):
     #    text = text.replace(number, cn2an.an2cn(number), 1)
     # Chinese Numerals To Arabic Numerals
     #text = cn2an.transform(text, "an2cn")
-    text = an2cn_normalizer.normalize_sentence(text)
+
+    #text = an2cn_normalizer.normalize_sentence(text)
     text = replace_punctuation(text)
     text = re.sub(r"([,;.\?\!])([\w])", r"\1 \2", text)
+    #text = re.sub(r"([\w])([,;.\?\!])", r"\1 \2", text)
     return text
 
 
@@ -419,8 +451,17 @@ if __name__ == "__main__":
     text = "富士通推出以人为本aizinrai的aizinrai butter VIP系统."
     text = "G P 是吧?你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗你不是一直想回到洛伦去吗,冒险游戏"
     text = ""
-    sens = split_sentences(text)
+    text ="上升到一个三秒的百分之一—百分之十"
+    text = "⼀、我不喜欢抽雪茄烟，但我喜欢吃番茄。 ⼆、我刨平⽊头，再去刨花⽣。嗯"
+    text = "'一,我不喜欢抽雪茄烟,但我喜欢吃番茄. 二,我刨平⽊头,再去刨花⽣.嗯'"
+    text = "这是一个很长的中文句子，它需要被合理地分割。另一个中文句子，也来测试一下。"
+    text = "这是一个超长的中英文混合句子，它包含了中文和 English words，并且会不断地延续下去，没有明显的停顿，这是为了测试函数在处理混合文本时的性能和准确性，确保能够正确地分割句子。Another very long mixed sentence that contains both Chinese characters and English words and will continue without any obvious pauses to further verify the function's capabilities."
+    text = "这是一个超长的中英文混合句子，它包含了中文和 English words，这是一个没有逗号和句号的超长中文句子它会一直延续下去用来测试在没有合适分割标点时函数的表现This is a very long English sentence without commas or periods to test the function's performance when there are no suitable punctuation marks for splitting, 这是为了测试函数在处理混合文本时的性能和准确性，确保能够正确地分割句子。"
+    text = "高 高 山 上 一 座 庙 , 住 了 八 个 出 家 人 , 八 个 道 人 都 有 名 , 大 弟 子 , 叫 凳 大 , 二 弟 子 , 叫 大 凳 , 三 弟 子 , 叫 猴 三 , 四 弟 子 , 叫 三 猴 , 五 弟 子 , 叫 瓶 茶 , 六 弟 子 , 叫 茶 瓶 , 七 弟 子 , 叫 冰 别 边 , 八 弟 子 , 叫 边 别 冰 . 凳 大 会 打 鼓 , 大 凳 会 撞 钟 , 猴 三 会 烧 火 , 三 猴 会 点 灯 , 瓶 茶 会 吹 管 , 茶 瓶 会 吹 笙 , 冰 别 边 会 煮 饭 , 边 别 冰 会 念 经 . 大 凳 要 打 凳 大 鼓 , 凳 大 要 撞 大 凳 钟 , 三 猴 要 烧 猴 三 火 , 猴 三 要 点 三 猴 灯 , 茶 瓶 要 吹 瓶 茶 管 , 瓶 茶 要 吹 茶 瓶 笙 , 边 别 冰 要 煮 冰 别 边 的 饭 , 冰 别 边 要 念 边 别 冰 的 经 . 大 凳 打 不 好 凳 大 的 鼓 , 凳 大 撞 不 好 大 凳 的 钟 , 三 猴 烧 不 好 猴 三 的 火 , 猴 三 点 不 好 三 猴 的 灯 , 茶 瓶 吹 不 好 瓶 茶 的 管 , 瓶 茶 吹 不 好 茶 瓶 的 笙 , 边 别 冰 煮 不 好 冰 别 边 的 饭 , 冰 别 边 念 不 好 边 别 冰 的 经 . 凳 大 还 打 凳 大 鼓 , 大 凳 还 撞 大 凳 钟 , 猴 三 还 烧 猴 三 火 , 三 猴 还 点 三 猴 灯 , 瓶 茶 还 吹 瓶 茶 管 , 茶 瓶 还 吹 茶 瓶 笙 , 冰 别 边 还 煮 冰 别 边 的 饭 , 边 别 冰 还 念 边 别 冰 的 经 . 各 人 还 干 各 一 行 , 白 白 争 个 脸 红 脖 子 青 . "    
+    print(text)
+    sens = split_sentences(text, 40, 60)
     print(sens)
+    '''
     print(text)
     text = text_normalize(text)
     print(text)
@@ -428,6 +469,7 @@ if __name__ == "__main__":
     #print(text)
     phones = g2w(text)
     print(phones)
+    '''
 
     #print(phones, tones, word2ph)
     #print(phones, tones, word2ph, bert.shape)
