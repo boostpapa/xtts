@@ -83,6 +83,13 @@ class Trainer(object):
             precision = "no"
         print(">> training precision:", precision)
 
+        if self.precision == "fp16":
+            self.dtype = torch.float16
+        elif self.precision == "bf16":
+            self.dtype = torch.bfloat16
+        else:   # fp32
+            self.dtype = None
+
         self.accelerator = Accelerator(mixed_precision=precision, split_batches=True)
         self.model_dir = Path(args.model)
         if self.accelerator.is_main_process:
@@ -235,6 +242,7 @@ class Trainer(object):
         accelerator = self.accelerator
         device = accelerator.device
         setproctitle("test_bigvgan")
+
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module
             self.gpt = self.gpt.module
@@ -290,7 +298,7 @@ class Trainer(object):
                 y_ = wav_infer.squeeze(1)
                 mel_ref = mel_refer
 
-                with torch.no_grad():
+                with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
                     mel_code = self.dvae.get_codebook_indices(mel_infer)
                     #latent = self.gpt(mel_refer,
                     latent, text_lens_out, code_lens_out = self.gpt(mel_refer,
@@ -335,7 +343,8 @@ class Trainer(object):
                 # Discriminators
                 self.optim_d.zero_grad()
 
-                with accelerator.autocast():
+                #with accelerator.autocast():
+                with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
                     y_g_hat, contrastive_loss = self.generator(x.transpose(1, 2), mel_ref.transpose(1, 2), mel_refer_len)
                     y_g_hat_mel = self.mel_pytorch(y_g_hat.squeeze(1))
 
@@ -383,7 +392,8 @@ class Trainer(object):
                 else:  # Uses mel <y_mel, y_g_hat_mel> for loss
                     loss_mel = self.fn_mel_loss_singlescale(y_mel, y_g_hat_mel) * self.lambda_melloss
 
-                with accelerator.autocast():
+                #with accelerator.autocast():
+                with torch.cuda.amp.autocast(enabled=self.dtype is not None, dtype=self.dtype):
                     # MPD loss
                     y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = self.mpd(y, y_g_hat)
                     loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
