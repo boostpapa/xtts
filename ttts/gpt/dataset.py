@@ -133,6 +133,11 @@ class GptTTSDataset(torch.utils.data.Dataset):
             wav_length = mel.shape[1] * 256
             raw_mel = mel
             #print(f"raw_mel.shape: {raw_mel.shape}")
+            '''
+            if mel.shape[1] < 30:
+                print(f"Warning: {wav_path} duration {mel.shape[1]*256/self.sample_rate} too short, skip!")
+                return None
+            '''
 
             if self.prompt == "order":
                 idx = int(strs[-1])

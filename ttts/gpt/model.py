@@ -687,8 +687,11 @@ class UnifiedVoice(nn.Module):
         conds = speech_conditioning_latent
         if use_speeds is not None:
             # duration_emb = self.duration_emb(mel_codes_lengths)
-            duration_emb = self.mel_pos_embedding.emb(mel_codes_lengths+1) * use_speeds.unsqueeze(1)
-            conds = torch.cat((speech_conditioning_latent, duration_emb.unsqueeze(1)), 1)
+            half_codes_lengths = mel_codes_lengths // 2
+            combined_codes_lengths = torch.stack([half_codes_lengths, mel_codes_lengths-1], dim=1)
+            combined_use_speeds = torch.stack([use_speeds, use_speeds], dim=1)
+            duration_emb = self.mel_pos_embedding.emb(combined_codes_lengths) * combined_use_speeds.unsqueeze(2)
+            conds = torch.cat((speech_conditioning_latent, duration_emb), 1)
 
         text_inputs, text_targets = self.build_aligned_inputs_and_targets(text_inputs, self.start_text_token, self.stop_text_token)
         text_emb = self.text_embedding(text_inputs) + self.text_pos_embedding(text_inputs)
@@ -810,8 +813,14 @@ class UnifiedVoice(nn.Module):
         if num_codes is not None:
             # duration_emb = self.duration_emb(num_codes)
             use_speeds = num_codes > 0
-            duration_emb = self.mel_pos_embedding.emb(num_codes) * use_speeds
-            conds = torch.cat((conds, duration_emb.unsqueeze(1)), 1)
+            # duration_emb = self.mel_pos_embedding.emb(num_codes) * use_speeds
+            # conds = torch.cat((conds, duration_emb.unsqueeze(1)), 1)
+
+            half_codes_lengths = num_codes // 2
+            combined_codes_lengths = torch.stack([half_codes_lengths, num_codes], dim=1)
+            combined_use_speeds = torch.stack([use_speeds, use_speeds], dim=1)
+            duration_emb = self.mel_pos_embedding.emb(combined_codes_lengths) * combined_use_speeds.unsqueeze(2)
+            conds = torch.cat((conds, duration_emb), 1)
 
         emb, emb_len = self.rearrange_sequence(conds, text_emb, text_lengths+2)
         self.inference_model.store_mel_emb(emb)
