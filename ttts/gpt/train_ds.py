@@ -17,6 +17,7 @@ from accelerate import Accelerator
 from ttts.utils.utils import AttrDict, get_logger
 from ttts.utils.lr_scheduler import CosineLRScheduler
 import argparse
+import shutil
 import logging
 from setproctitle import setproctitle
 from ttts.utils.checkpoint import load_checkpoint, load_pretrain_modules
@@ -31,6 +32,7 @@ final_lr_ratio = 0.1
 
 class Trainer(object):
     def __init__(self, args):
+        setproctitle("train_gpt")
         if args.config.endswith(".json"):
             json_config = json.load(open(args.config))
             self.cfg = AttrDict(json_config)
@@ -91,6 +93,7 @@ class Trainer(object):
         self.model_dir = Path(args.model)
         if self.accelerator.is_main_process:
             self.model_dir.mkdir(exist_ok=True, parents=True)
+            shutil.copyfile(args.config, os.path.join(self.model_dir, os.path.basename(args.config)))
         self.logger = get_logger(self.model_dir)
 
         self.optimizer = AdamW(self.gpt.parameters(), lr=self.lr, betas=(0.9, 0.96), weight_decay=self.weight_decay)
@@ -161,7 +164,6 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
-        setproctitle("test_xtts_gpt")
         self.dvae.cuda()
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module

@@ -43,6 +43,7 @@ config='/speechwork/users/wd007/tts/xtts2/diffusion/s4_v2/exp/baseline_unet_rd/c
 config='/speechwork/users/wd007/tts/xtts2/diffusion/ugc/s1/exp/baseline_sft/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/exp/baseline_mrte1_nolangid_bf16_2/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/diffusion/s3_v2/exp/baseline_mrte1_nolangid_bf16_2/config.yaml'
+config='/speechwork/users/wd007/tts/xtts2/gpt/s2_bpe_v2/exp/baseline_bpemix_ds/config.yaml'
 
 cfg = OmegaConf.load(config)
 
@@ -138,9 +139,9 @@ cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/siyi.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/qingnian_angry.mp3'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/wubinbin.mp3'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/tunshixinkong1.wav'
-cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 cond_audio = '/speechfs01/users/siyi/data/MeiShi/speak/ZH/wav/0002_000228.wav'
 cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/yctf.wav'
+cond_audio = '/speechwork/users/wd007/tts/xtts2/gpt/s2_v3/bzshort/MeiShi_zh.wav'
 
 audio,sr = torchaudio.load(cond_audio)
 if audio.shape[0]>1:
@@ -264,6 +265,7 @@ text = "We present Open-Sora, an initiative dedicated to efficiently produce hig
 text = "What time do you usually go to bed? 我要一杯芋泥啵啵奶茶，不要芋泥不要奶茶，只要啵啵."
 text = "幽暗深邃的轮回通道内。“终于看到尽头了。”星辰塔内，罗峰遥遥看着轮回通道尽头的光亮之处，以他永恒真神层次的实力，已然能够看到那一座生机勃勃的广袤世界。“主人，我们终于抵达起源大陆了。”界兽摩罗撒也很兴奋。“嗯，终于来了。”罗峰也露出笑容。"
 text = "真正的危险不是计算机开始像人一样思考，而是人开始像计算机一样思考。计算机只是可以帮我们处理一些简单事务。"
+text = "他那像哄小孩似的话，引得人们哄堂大笑，大家听了一哄而散。"
 
 '''
 pinyin = ' '.join(lazy_pinyin(text, style=Style.TONE3, neutral_tone_with_five=True))
@@ -334,19 +336,22 @@ for sent in sentences:
                 for idx in indices:
                     chars[idx] = pinyins[idx]
                 cleand_text = " ".join(chars)
-            print(cleand_text)
         
     print(cleand_text)
     text_tokens = torch.IntTensor(tokenizer.encode(cleand_text)).unsqueeze(0).to(device)
     #text_tokens = F.pad(text_tokens, (0, 1))  # This may not be necessary.
-    text_tokens = F.pad(text_tokens, (1,0), value=0)
-    text_tokens = F.pad(text_tokens, (0,1), value=1)
+    #text_tokens = F.pad(text_tokens, (1,0), value=0)
+    #text_tokens = F.pad(text_tokens, (0,1), value=1)
     text_tokens = text_tokens.to(device)
+    text_len = [text_tokens.size(1)]
+    text_len = torch.IntTensor(text_len).to(device)
+    
     print(text_tokens)
     print(text_tokens.shape)
     with torch.no_grad():
         codes = gpt.inference_speech(auto_conditioning, text_tokens,
                                 cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
+                                text_lengths=text_len,
                                 do_sample=True,
                                 top_p=top_p,
                                 top_k=top_k,
@@ -367,11 +372,19 @@ for sent in sentences:
         torch.clip(wav1, -32767.0, 32767.0)
         wavs1.append(wav1)
 
-        latent = gpt(auto_conditioning, text_tokens,
+        '''
+        latent, text_lens_out, code_lens_out = \
+                gpt(auto_conditioning, text_tokens,
                     torch.tensor([text_tokens.shape[-1]], device=text_tokens.device), codes,
                     torch.tensor([codes.shape[-1]*gpt.mel_length_compression], device=text_tokens.device),
                     cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
                     return_latent=True, clip_inputs=False).transpose(1,2)
+
+        latent_list = []
+        for lat, t_len in zip(latent, text_lens_out):
+            lat = lat[t_len:, :]
+            latent_list.append(lat)
+        latent = pad_sequence(latent_list, batch_first=True)
         print(latent.shape)
 
         upstride = gpt.mel_length_compression/256
@@ -382,7 +395,7 @@ for sent in sentences:
         torch.clip(wav, -32767.0, 32767.0)
         print(wav.shape)
         wavs.append(wav)
-        #wavs.append(zero_wav)
+        '''
 
 
 #from IPython.display import Audio
@@ -398,9 +411,9 @@ wav1 = torch.cat(wavs1, dim=1)
 torchaudio.save('gen1.wav', wav1.type(torch.int16), 24000)
 #torchaudio.save('gen1.wav', wav1, 24000)
 
+'''
 mel = torch.cat(mels, -1)
 np.save("gen.npy", mel.detach().cpu().numpy())
 wav = torch.cat(wavs, dim=1)
 torchaudio.save('gen.wav', wav.type(torch.int16), 24000)
-
-#Audio(wav, rate=sampling_rate)
+'''

@@ -11,7 +11,7 @@ from ttts.vqvae.xtts_dvae import DiscreteVAE
 from ttts.gpt.text.cleaner import clean_text1, text_normalize, text_to_sentences
 from ttts.utils.utils import load_audio
 
-device = 'cuda:3'
+device = 'cuda:2'
 
 from ttts.utils.infer_utils import load_model
 from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
@@ -34,9 +34,9 @@ config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_2409/exp/baseline_v2_
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/baseline_fqs_2409/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501_v1/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
-config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa1/config.yaml'
 config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2503_v1/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
 config='/speechwork/users/wd007/tts/xtts2/bigvgan/baseline_mix_2409/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa/config.yaml'
+config='/juicefs/users/wd007/work2024/tts/xtts2/bigvgan/emilia_2501/exp/baseline_v2_bigvgan_pytorch_newgpt_sdpa1/config.yaml'
 
 cfg = OmegaConf.load(config)
 
@@ -325,9 +325,9 @@ outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/opensource_all_test_o
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/bilibili_all_dur_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/opensource_all_dur_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/seed_all_test_output"
-outpath="/speechfs02/users/wd007/work2024/tts/test/v202501/seed_all_test_output"
 outpath="/speechfs02/users/wd007/work2024/tts/test/v202503/seed_zh_hard_test_output"
-outpath="/speechfs02/users/wd007/work2024/tts/test/v202501/seed_zh_hard_test_output"
+outpath="/speechfs02/users/wd007/work2024/tts/test/v202502/seed_all_test_output"
+outpath="/speechfs02/users/wd007/work2024/tts/test/v202502/seed_zh_hard_test_output"
 
 import os
 if not os.path.exists(outpath):
@@ -364,8 +364,8 @@ for line in testkeys:
     pkey = strs[0]
     key = strs[1]
     pwav = infos[pkey][1]
-    lang = infos[pkey][3]
 
+    lang = infos[key][3]
     cleand_text = infos[key][4] if use_spm else infos[key][5]
     sentences = text_to_sentences(cleand_text, lang)
     print(f"{pkey}\t{key}\t{sentences}", flush=True)

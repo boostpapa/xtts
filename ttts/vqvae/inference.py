@@ -86,7 +86,7 @@ def main():
     with open(args.test_file) as fin:
         for line in fin:
             wav_path = line.strip()
-            print(wav_path)
+            print(f"{wav_path} ", end="")
 
             wave, sr = torchaudio.load(wav_path)
             # print(f"wave shape: {wave.shape}, sample_rate: {sample_rate}")
@@ -112,8 +112,8 @@ def main():
                     torchaudio.save(f"{args.outdir}/{fname}_recon.wav", wav_recon.detach().cpu(), sample_rate)
             elif args.vqcode:
                 code = extract_vq(mel, dvae, device=device)
-                np.save(f"{args.outdir}/{fname}_code.npy", code.detach().cpu().numpy())
-                print(code.tolist())
+                #np.save(f"{args.outdir}/{fname}_code.npy", code.detach().cpu().numpy())
+                print(code.squeeze(0).tolist())
 
 
 if __name__ == '__main__':

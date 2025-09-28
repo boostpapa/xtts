@@ -104,13 +104,16 @@ class BigVGANDataset(torch.utils.data.Dataset):
             wav_infer = wav[:, :end]
             wav_refer = wav[:, int(wav_len/2):wav_len]
 
-            if use_speed and random.random() < 0.7:
-                factor = str(random.uniform(0.75, 1.25))
+            #if use_speed and random.random() < 0.7:
+            if use_speed:
+                factor = str(random.uniform(0.70, 1.30))
                 wav_infer = augment.EffectChain().tempo(factor).apply(wav_infer, src_info={'rate': self.sample_rate})
 
+            '''
             if use_speed and random.random() < 0.7:
-                cond_factor = str(random.uniform(0.75, 1.25))
+                cond_factor = str(random.uniform(0.70, 1.30))
                 wav_refer = augment.EffectChain().tempo(cond_factor).apply(wav_refer, src_info={'rate': self.sample_rate})
+            '''
 
             '''
             audio_data = wav_refer[0].numpy()

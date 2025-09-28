@@ -7,104 +7,160 @@ import torch.utils.data
 from torch import LongTensor
 from tqdm import tqdm
 import torchaudio
-from pypinyin import Style, lazy_pinyin
+from collections import defaultdict
+import sentencepiece as spm
+from ttts.utils.byte_utils import byte_encode
+from ttts.utils.utils import tokenize_by_CJK_char
 
 from ttts.gpt.voice_tokenizer import VoiceBpeTokenizer
-from ttts.utils.infer_utils import load_model
+from ttts.vocoder.feature_extractors import MelSpectrogramFeatures
+from ttts.utils.utils import load_audio, get_prompt_slice
 import json
-import os
 
-def read_jsonl(path):
-    with open(path, 'r') as f:
-        json_str = f.read()
-    data_list = []
-    for line in json_str.splitlines():
-        data = json.loads(line)
-        data_list.append(data)
-    return data_list
-def write_jsonl(path, all_paths):
-    with open(path,'w', encoding='utf-8') as file:
-        for item in all_paths:
-            json.dump(item, file, ensure_ascii=False)
-            file.write('\n')
 
 class HifiGANDataset(torch.utils.data.Dataset):
-    def __init__(self, opt):
-        self.jsonl_path = opt['dataset']['path']
-        self.audiopaths_and_text = read_jsonl(self.jsonl_path)
-        self.tok = VoiceBpeTokenizer('ttts/gpt/gpt_tts_tokenizer.json')
-    def __getitem__(self, index):
-        # Fetch text and add start/stop tokens.
-        audiopath_and_text = self.audiopaths_and_text[index]
-        audiopath, text = audiopath_and_text['path'], audiopath_and_text['text']
-        text = ' '.join(lazy_pinyin(text, style=Style.TONE3, neutral_tone_with_five=True))
-        text = self.tok.encode(text)
-        text_tokens = LongTensor(text)
-
-        wav,sr = torchaudio.load(audiopath)
-        if wav.shape[0]>1:
-            wav = wav[0].unsqueeze(0)
-        if sr!=24000:
-            wav = torchaudio.transforms.Resample(sr,24000)(wav)
-
-        quant_path = audiopath + '.melvq.pth'
-        mel_codes = LongTensor(torch.load(quant_path)[0])
-
-        split = random.randint(int(wav.shape[1]//3), int(wav.shape[1]//3*2))
-        if random.random()>0.5:
-            wav_refer = wav[:,split:]
+    def __init__(self, cfg, datafile, is_eval=False):
+        if 'gpt_vocab' in cfg.dataset:
+            self.tokenizer = VoiceBpeTokenizer(cfg.dataset['gpt_vocab'])
+            self.use_spm = False
         else:
-            wav_refer = wav[:,:split]
-        if wav_refer.shape[1]>(50*1024):
-            wav_refer = wav_refer[:,:50*1024]
-        #text_token mel_codes 
+            self.tokenizer = spm.SentencePieceProcessor()
+            self.tokenizer.load(cfg.dataset['bpe_model'])
+            self.use_spm = True
+        self.datalist = []
+        self.spk2wav = defaultdict(list)
+        with open(datafile, 'r', encoding='utf8') as fin:
+            for line in fin:
+                self.datalist.append(line.strip())
+                # key, wav_path, spkid, language, raw_text, cleand_text
+                strs = line.strip().split("|")
+                self.spk2wav[strs[2]].append(strs[1])
 
-        if wav.shape[1]>102400:
-            wav = wav[:,:102400]
-            mel_codes = mel_codes[:100]
+        self.squeeze = cfg.dataset['squeeze']
+        self.sample_rate = cfg.dataset['sample_rate']
+        self.mel_extractor = MelSpectrogramFeatures(**cfg.dataset['mel'])
+        self.is_eval = is_eval
 
-        return text_tokens, mel_codes, wav, wav_refer
+    def __getitem__(self, index):
+        try:
+            # Fetch text and add start/stop tokens.
+            line = self.datalist[index]
+            # key, wav_path, spkid, language, raw_text, cleand_text
+            # key, wav_path, spkid, language, raw_text
+            strs = line.strip().split("|")
+            if (self.use_spm and len(strs) < 5) or (not self.use_spm and len(strs) < 6):
+                return None
+
+            if not self.use_spm:
+                cleand_text = strs[5]
+                # [language] + cleand_text
+                # cleand_text = f"[{strs[3]}] {cleand_text}"
+            else:
+                cleand_text = strs[4]
+                cleand_text = tokenize_by_CJK_char(cleand_text)
+                # cleand_text = f"[{strs[3]}] {cleand_text}"
+                #cleand_text = cleand_text.replace(' ', '[SPACE]')
+                cleand_text = byte_encode(cleand_text)
+            # print(f"cleand_text: {cleand_text}")
+            seqid = self.tokenizer.encode(cleand_text)
+            # print(f"seqid: {seqid}")
+            text_tokens = LongTensor(seqid)
+            # print(f"text_tokens.shape: {text_tokens} {len(text_tokens)}")
+
+            key = strs[0]
+            wav_path = strs[1]
+            spkid = strs[2]
+
+            wav = load_audio(wav_path, self.sample_rate)
+            if wav is None:
+                print(f"Warning: {wav_path} loading error, skip!")
+                return None
+            mel_raw = self.mel_extractor(wav)[0]
+            # print(f"mel_raw.shape: {mel_raw.shape}")
+
+            refer_wav_path = random.choice(self.spk2wav[spkid])
+            refer_wav = load_audio(refer_wav_path, self.sample_rate)
+            if refer_wav is None:
+                print(f"Warning: {wav_path} loading error, skip!")
+                return None
+            #print(f"Info: {wav_path} processing Successed.")
+            refer_wav_clip = get_prompt_slice(refer_wav, 4, 1, self.sample_rate, self.is_eval)
+            mel_refer = self.mel_extractor(refer_wav_clip)[0]
+
+            #mel_refer = get_prompt_slice(mel_raw, 400, 100, 1, self.is_eval)
+            if mel_refer.shape[1] > 300:
+                mel_refer = mel_refer[:, :300]
+
+            if wav.shape[1] > 400*256:
+                wav = wav[:, :400*256]
+            mel = self.mel_extractor(wav)[0]
+            if mel.shape[1] > 400:
+                mel = mel[:, :400]
+
+        except:
+            print(f"Warning: {wav_path} processing error, skip!")
+            return None
+
+        if text_tokens.shape[0] > 300 or mel_raw.shape[1] > 2400:
+            print(f"Warning: {wav_path} text len {text_tokens.shape[0]} exceed 300 or raw mel len {mel_raw.shape[1]} exceed 2400.")
+            return None
+
+        return text_tokens, mel, wav, mel_refer, wav_refer
 
     def __len__(self):
-        return len(self.audiopaths_and_text)
+        return len(self.datalist)
 
 
-class HiFiGANCollater():
+class HiFiGANCollator():
 
     def __init__(self):
         pass
+
     def __call__(self, batch):
         batch = [x for x in batch if x is not None]
-        if len(batch)==0:
+        if len(batch) == 0:
             return None
         text_lens = [len(x[0]) for x in batch]
         max_text_len = max(text_lens)
-        mel_code_lens = [len(x[1]) for x in batch]
-        max_mel_code_len = max(mel_code_lens)
+
+        mel_lens = [x[1].shape[1] for x in batch]
+        max_mel_len = max(mel_lens)
+
         wav_lens = [x[2].shape[1] for x in batch]
         max_wav_len = max(wav_lens)
-        wav_refer_lens = [x[3].shape[1] for x in batch]
+
+        mel_refer_lens = [x[3].shape[1] for x in batch]
+        max_mel_refer_len = max(mel_refer_lens)
+
+        wav_refer_lens = [x[4].shape[1] for x in batch]
         max_wav_refer_len = max(wav_refer_lens)
+
         texts = []
-        mel_codes = []
+        mels = []
         wavs = []
+        mel_refers = []
         wav_refers = []
-        for b in batch:
-            text_token, mel_code, wav, wav_refer = b
-            texts.append(F.pad(text_token,(0,max_text_len-len(text_token)), value=0))
-            mel_codes.append(F.pad(mel_code,(0,max_mel_code_len-len(mel_code)), value=0))
-            wavs.append(F.pad(wav,(0, max_wav_len-wav.shape[1]), value=0))
-            wav_refers.append(F.pad(wav_refer,(0, max_wav_refer_len-wav_refer.shape[1]), value=0))
+        for sample in batch:
+            text_token, mel, wav, mel_refer, wav_refer = sample
+            texts.append(F.pad(text_token, (0, max_text_len-len(text_token)), value=0))
+            mels.append(F.pad(mel, (0, max_mel_len-mel.shape[1]), value=0))
+            wavs.append(F.pad(wav, (0, max_wav_len-wav.shape[1]), value=0))
+            mel_refers.append(F.pad(mel_refer, (0, max_mel_refer_len-mel_refer.shape[1]), value=0))
+            wav_refers.append(F.pad(wav_refer, (0, max_wav_refer_len-wav_refer.shape[1]), value=0))
 
         padded_text = torch.stack(texts)
-        padded_mel_code = torch.stack(mel_codes)
+        padded_mel = torch.stack(mels)
         padded_wav = torch.stack(wavs)
+        padded_mel_refer = torch.stack(mel_refers)
         padded_wav_refer = torch.stack(wav_refers)
         return {
             'padded_text': padded_text,
-            'padded_mel_code': padded_mel_code,
+            'text_lengths': LongTensor(text_lens),
+            'padded_mel': padded_mel,
             'padded_wav': padded_wav,
-            'padded_wav_refer':padded_wav_refer,
+            'padded_mel_refer': padded_mel_refer,
+            'padded_wav_refer': padded_wav_refer,
+            'wav_lens': LongTensor(wav_lens)
         }
 
 
@@ -119,7 +175,7 @@ if __name__ == '__main__':
     }
     cfg = json.load(open('ttts/hifigan/config.json'))
     ds = HifiGANDataset(cfg)
-    dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=HiFiGANCollater())
+    dl = torch.utils.data.DataLoader(ds, **cfg['dataloader'], collate_fn=HiFiGANCollator())
     i = 0
     m = []
     max_text = 0

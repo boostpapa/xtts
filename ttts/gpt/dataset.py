@@ -125,8 +125,10 @@ class GptTTSDataset(torch.utils.data.Dataset):
             if wav is None:
                 print(f"Warning: {wav_path} loading error, skip!")
                 return None
-            if use_speed and random.random() < 0.7:
-                factor = str(random.uniform(0.75, 1.25))
+    
+            #if use_speed and random.random() < 0.7:
+            if use_speed:
+                factor = str(random.uniform(0.70, 1.30))
                 wav = augment.EffectChain().tempo(factor).apply(wav, src_info={'rate': self.sample_rate})
 
             mel = self.mel_extractor(wav)[0]
@@ -160,9 +162,11 @@ class GptTTSDataset(torch.utils.data.Dataset):
             if cond_wav is None:
                 print(f"Warning: {cond_wav_path} loading error, skip!")
                 return None
+            '''
             if use_speed and random.random() < 0.7:
                 cond_factor = str(random.uniform(0.75, 1.25))
                 cond_wav = augment.EffectChain().tempo(cond_factor).apply(cond_wav, src_info={'rate': self.sample_rate})
+            '''
 
             cond_wav_clip = get_prompt_slice(cond_wav, 15, 3, self.sample_rate, self.is_eval)
             cond_mel = self.mel_extractor(cond_wav_clip)[0]

@@ -36,7 +36,8 @@ def callback(line):
 def process_line(line, type):
     try:
         #key, wav, spk, language, text = line.strip().split("||\t")
-        key, wav, spk, language, text = re.split('\t|\\|', line.strip())
+        key, wav, spk, language, text = re.split('\t|\\|', line.strip())[:5]
+        language = "ZH" if language == "ZHEN" else language
         if type == "clean":
             norm_text, phones = clean_text1(text, language)
             cleaned_line = "{}|{}|{}|{}|{}|{}\n".format(
@@ -125,6 +126,7 @@ def preprocess(
                     for line in cleaned_text:
                         if line is not None:
                             out_file.write(line)
+    return
 
     transcription_path = cleaned_path
     spk_utt_map = defaultdict(list)
@@ -137,9 +139,9 @@ def preprocess(
         countNotFound = 0
         for line in f.readlines():
             if type == "clean":
-                key, wav, spk, language, text, phones = line.strip().split("|")
+                key, wav, spk, language, text, phones = line.strip().split("|")[:6]
             elif type == "norm":
-                key, wav, spk, language, text = line.strip().split("|")
+                key, wav, spk, language, text = line.strip().split("|")[:5]
 
             if wav in audioPaths:
                 # 过滤数据集错误：相同的音频匹配多个文本，导致后续bert出问题

@@ -5,6 +5,7 @@ import time
 import random
 import argparse
 import itertools
+import shutil
 from pathlib import Path
 import torch
 import torch.nn.functional as F
@@ -55,6 +56,7 @@ class Trainer(object):
     def __init__(self, args):
         # ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
         # self.accelerator = Accelerator(kwargs_handlers=[ddp_kwargs])
+        setproctitle("train_bigvgan")
         if args.config.endswith(".json"):
             json_config = json.load(open(args.config))
             self.cfg = AttrDict(json_config)
@@ -95,6 +97,7 @@ class Trainer(object):
         if self.accelerator.is_main_process:
             self.model_dir.mkdir(exist_ok=True, parents=True)
             print(f"Checkpoints directory: {self.model_dir}")
+            shutil.copyfile(args.config, os.path.join(self.model_dir, os.path.basename(args.config)))
         self.logger = get_logger(self.model_dir)
 
         self.global_step = 0
@@ -241,7 +244,6 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
-        setproctitle("test_bigvgan")
 
         if isinstance(self.dvae, torch.nn.parallel.DistributedDataParallel):
             self.dvae = self.dvae.module
@@ -339,6 +341,7 @@ class Trainer(object):
                     y_mel = self.mel_pytorch(y)
                     feats_lengths = torch.LongTensor([segment_size // 256 + 1] * y_mel.size(0))
                     y = y.unsqueeze(1)
+                glt = time.time() - start_b
 
                 # Discriminators
                 self.optim_d.zero_grad()
@@ -383,6 +386,7 @@ class Trainer(object):
                     grad_norm_mpd = 0.0
                     grad_norm_mrd = 0.0
                     grad_norm_msfd = 0.
+                dt = time.time() - start_b - glt
 
                 # Generator
                 self.optim_g.zero_grad()
@@ -420,6 +424,7 @@ class Trainer(object):
                     grad_norm_g = accelerator.clip_grad_norm_(self.generator.parameters(), self.grad_clip)
                 accelerator.wait_for_everyone()
                 self.optim_g.step()
+                gt = time.time() - start_b - glt - dt
 
                 if accelerator.is_main_process:
                     if self.global_step % self.log_interval == 0:
@@ -430,7 +435,7 @@ class Trainer(object):
                             f"Steps: {self.global_step:d}, "
                             f"Gen Loss Total: {loss_gen_all:4.3f}, "
                             f"Mel Error: {mel_error:4.3f}, "
-                            f"s/b: {time.time() - start_b:4.3f} "
+                            f"s/b: {time.time() - start_b:4.3f} glt {glt:4.3f} dt {dt:4.3f} gt {gt:4.3f} "
                             f"lr: {self.optim_g.param_groups[0]['lr']:4.7f} "
                             f"grad_norm_g: {grad_norm_g:4.3f}"
                         )

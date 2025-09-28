@@ -6,8 +6,8 @@ from g2p_en import G2p
 from ttts.gpt.text import symbols
 from ttts.gpt.text.symbols import punctuation
 
-from nemo_text_processing.text_normalization.normalize import Normalizer
-normalizer = Normalizer(input_case='cased', lang='en')
+#from nemo_text_processing.text_normalization.normalize import Normalizer
+#normalizer = Normalizer(input_case='cased', lang='en')
 
 current_file_path = os.path.dirname(__file__)
 CMU_DICT_PATH = os.path.join(current_file_path, "cmudict.rep")
@@ -378,9 +378,10 @@ def normalize_numbers(text):
 
 def text_normalize(text):
     #text = normalize_numbers(text)
-    text = normalizer.normalize(text)
+    #text = normalizer.normalize(text)
     text = replace_punctuation(text)
     text = re.sub(r"([,;.\?\!])([\w])", r"\1 \2", text)
+    #text = re.sub(r"([\w])([,;.\?\!])", r"\1 \2", text)
     return text
 
 
@@ -410,8 +411,9 @@ def g2w(text):
 if __name__ == "__main__":
     # print(get_dict())
     # print(eng_word_to_phoneme("hello"))
-    text = "Mr. Arp had not begun life so sourly: as a youth he had been proud of GPU 49%"
     text = "He sat at his CafÃ©, three quarters down the Boulevard,"
+    text = "It came to me from Norhala when we rode the flying block,and-he-sealed upon me when I was in-his'--again she crimsoned,embrace."
+    text = "Mr. Arp had not begun life so sourly: as a youth he had been proud of GPU 49%"
     print(text)
     text = text_normalize(text)
     print(text)
